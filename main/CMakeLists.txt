@@ -24,7 +24,6 @@ set(INCLUDE_DIRS
     "audio"
     "audio/codecs"
     "boards/common"
-    "boards/sp-esp32-s3-1.28-box"
     "led"
 )
 
