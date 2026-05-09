@@ -16,6 +16,7 @@ set(SOURCES
     "boards/common/i2c_device.cc"
     "boards/common/system_reset.cc"
     "led/single_led.cc"
+    "settings.cc"
 )
 
 set(INCLUDE_DIRS
