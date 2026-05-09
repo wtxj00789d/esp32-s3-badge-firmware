@@ -151,7 +151,7 @@ class BadgeMediaTool:
 
         controls = ttk.Frame(self.audio_tab, padding=(10, 0, 10, 8))
         controls.pack(fill=X)
-        ttk.Label(controls, text="Output format: 24000 Hz, mono, signed 16-bit PCM WAV").pack(side=LEFT)
+        ttk.Label(controls, text="Output format: 16000 Hz, mono, signed 16-bit PCM WAV").pack(side=LEFT)
         self.convert_audio_button = ttk.Button(controls, text="Convert WAV", command=self.start_audio_conversion)
         self.convert_audio_button.pack(side=RIGHT)
 
@@ -444,7 +444,7 @@ class BadgeMediaTool:
     def _audio_done(self, output: Path, size: int) -> None:
         self.audio_progress_var.set(100)
         self.set_busy(False)
-        self.log_audio(f"Wrote {output} ({size} bytes), 24000Hz mono s16 PCM")
+        self.log_audio(f"Wrote {output} ({size} bytes), 16000Hz mono s16 PCM")
         messagebox.showinfo("Audio conversion complete", f"Saved:\n{output}")
 
 

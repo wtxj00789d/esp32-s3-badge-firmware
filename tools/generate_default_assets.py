@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import argparse
 import bisect
+import shutil
 import statistics
+import tempfile
 import textwrap
 
 import miniaudio
@@ -13,7 +15,7 @@ from PIL import Image
 WIDTH = 240
 HEIGHT = 240
 FPS = 15
-SOUND_SAMPLE_RATE = 24000
+SOUND_SAMPLE_RATE = 16000
 SOUND_MAX_SECONDS = 18
 
 
@@ -112,14 +114,17 @@ def sample_gif(path: Path) -> list[bytes]:
 
 
 def decode_sound(path: Path) -> list[int]:
-    decoded = miniaudio.decode_file(
-        str(path),
-        output_format=miniaudio.SampleFormat.SIGNED16,
-        nchannels=1,
-        sample_rate=SOUND_SAMPLE_RATE,
-    )
-    samples = list(decoded.samples)
-    return samples[: SOUND_SAMPLE_RATE * SOUND_MAX_SECONDS]
+    with tempfile.TemporaryDirectory(prefix="badge_default_audio_") as tmp:
+        temp_source = Path(tmp) / f"source{path.suffix.lower() or '.audio'}"
+        shutil.copyfile(path, temp_source)
+        decoded = miniaudio.decode_file(
+            str(temp_source),
+            output_format=miniaudio.SampleFormat.SIGNED16,
+            nchannels=1,
+            sample_rate=SOUND_SAMPLE_RATE,
+        )
+        samples = list(decoded.samples)
+        return samples[: SOUND_SAMPLE_RATE * SOUND_MAX_SECONDS]
 
 
 def bytes_literal(data: bytes, indent: str = "    ") -> str:

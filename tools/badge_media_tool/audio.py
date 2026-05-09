@@ -8,7 +8,7 @@ from pathlib import Path
 import miniaudio
 
 
-SAMPLE_RATE = 24000
+SAMPLE_RATE = 16000
 CHANNELS = 1
 SAMPLE_WIDTH = 2
 

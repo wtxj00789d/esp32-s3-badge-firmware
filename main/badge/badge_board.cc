@@ -39,7 +39,7 @@ constexpr gpio_num_t kAudioDout = GPIO_NUM_8;
 constexpr gpio_num_t kAudioPa = GPIO_NUM_46;
 constexpr gpio_num_t kAudioI2cSda = GPIO_NUM_15;
 constexpr gpio_num_t kAudioI2cScl = GPIO_NUM_14;
-constexpr int kAudioSampleRate = 24000;
+constexpr int kAudioSampleRate = 16000;
 
 constexpr gpio_num_t kBootButton = GPIO_NUM_0;
 constexpr uint16_t kBootLongPressMs = 2000;

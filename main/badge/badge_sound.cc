@@ -12,7 +12,7 @@ namespace {
 constexpr const char* TAG = "BadgeSound";
 constexpr uint16_t kPcmFormat = 1;
 constexpr uint16_t kChannels = 1;
-constexpr uint32_t kSampleRate = 24000;
+constexpr uint32_t kSampleRate = 16000;
 constexpr uint16_t kBitsPerSample = 16;
 constexpr size_t kChunkSamples = 240;
 

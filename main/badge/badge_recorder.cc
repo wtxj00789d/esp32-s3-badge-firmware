@@ -9,7 +9,7 @@ namespace {
 constexpr const char* TAG = "BadgeRecorder";
 constexpr uint16_t kPcmFormat = 1;
 constexpr uint16_t kChannels = 1;
-constexpr uint32_t kSampleRate = 24000;
+constexpr uint32_t kSampleRate = 16000;
 constexpr uint16_t kBitsPerSample = 16;
 constexpr uint16_t kBlockAlign = kChannels * kBitsPerSample / 8;
 constexpr uint32_t kByteRate = kSampleRate * kBlockAlign;
