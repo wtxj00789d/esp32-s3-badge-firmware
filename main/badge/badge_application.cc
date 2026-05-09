@@ -1,16 +1,19 @@
 #include "badge_application.h"
 
 #include <esp_log.h>
+#include <esp_heap_caps.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
 
 #include "badge_defaults.h"
+#include "badge_default_assets.h"
 
 namespace {
 constexpr const char* TAG = "BadgeApplication";
 constexpr int64_t kIdleQueueWaitUs = 50 * 1000;
+constexpr int64_t kStartupButtonIgnoreUs = 3 * 1000 * 1000;
 
 const char* ButtonEventName(BadgeButtonEvent event)
 {
@@ -30,6 +33,7 @@ void BadgeApplication::Initialize()
 {
     ESP_LOGI(TAG, "Initialize badge firmware");
     board_.Initialize();
+    ignore_button_until_us_ = esp_timer_get_time() + kStartupButtonIgnoreUs;
     sound_player_ = std::make_unique<BadgeSoundPlayer>(board_.Audio());
     recorder_ = std::make_unique<BadgeRecorder>(board_.Audio());
 
@@ -50,12 +54,10 @@ void BadgeApplication::Initialize()
 
     if (!sd_ok) {
         ESP_LOGW(TAG, "SD storage unavailable; using fallback page");
-        state_ = BadgeState::NoSdFallback;
-        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+        StartEmbeddedWallpaper();
     } else if (storage_.Media().empty()) {
         ESP_LOGW(TAG, "No badge media found on SD; using fallback page");
-        state_ = BadgeState::NoSdFallback;
-        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+        StartEmbeddedWallpaper();
     } else {
         ESP_LOGI(TAG, "Badge media ready: %u item(s)", static_cast<unsigned>(storage_.Media().size()));
         SelectInitialWallpaper();
@@ -75,8 +77,7 @@ void BadgeApplication::Initialize()
 
         if (!loaded) {
             current_bwp_.Close();
-            state_ = BadgeState::NoSdFallback;
-            board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+            StartEmbeddedWallpaper();
         }
     }
 }
@@ -101,6 +102,16 @@ void BadgeApplication::Run()
                     wait_us = kIdleQueueWaitUs;
                 }
             }
+        } else if (state_ == BadgeState::PlayingEmbeddedWallpaper) {
+            const int64_t now_us = esp_timer_get_time();
+            if (now_us >= embedded_next_frame_time_us_) {
+                wait_us = 0;
+            } else {
+                wait_us = embedded_next_frame_time_us_ - now_us;
+                if (wait_us > kIdleQueueWaitUs) {
+                    wait_us = kIdleQueueWaitUs;
+                }
+            }
         }
 
         BadgeAction action;
@@ -113,12 +124,22 @@ void BadgeApplication::Run()
             if (now_us >= next_frame_time_us_) {
                 DrawWallpaperFrame();
             }
+        } else if (state_ == BadgeState::PlayingEmbeddedWallpaper) {
+            const int64_t now_us = esp_timer_get_time();
+            if (now_us >= embedded_next_frame_time_us_) {
+                DrawEmbeddedWallpaperFrame();
+            }
         }
     }
 }
 
 void BadgeApplication::HandleButton(BadgeButtonEvent event)
 {
+    if (esp_timer_get_time() < ignore_button_until_us_) {
+        ESP_LOGI(TAG, "Ignore startup BOOT button event: %s", ButtonEventName(event));
+        return;
+    }
+
     ESP_LOGI(TAG, "BOOT button: %s", ButtonEventName(event));
 
     BadgeAction action;
@@ -247,8 +268,7 @@ void BadgeApplication::AdvanceWallpaper()
     const auto& media = storage_.Media();
     if (!storage_.mounted() || media.empty()) {
         current_bwp_.Close();
-        state_ = BadgeState::NoSdFallback;
-        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+        StartEmbeddedWallpaper();
         return;
     }
 
@@ -264,8 +284,7 @@ void BadgeApplication::AdvanceWallpaper()
     }
 
     current_bwp_.Close();
-    state_ = BadgeState::NoSdFallback;
-    board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+    StartEmbeddedWallpaper();
 }
 
 void BadgeApplication::PlayCurrentSound()
@@ -273,12 +292,14 @@ void BadgeApplication::PlayCurrentSound()
     const auto& media = storage_.Media();
     if (!storage_.mounted() || media.empty() || current_media_index_ >= media.size()) {
         ESP_LOGW(TAG, "No SD media sound available");
+        PlayDefaultSound();
         return;
     }
 
     const BadgeMediaItem& item = media[current_media_index_];
     if (!item.has_wav) {
         ESP_LOGW(TAG, "No matching WAV for %s", item.basename.c_str());
+        PlayDefaultSound();
         return;
     }
 
@@ -290,12 +311,64 @@ void BadgeApplication::PlayCurrentSound()
     sound_player_->Play(item.wav_path.c_str());
 }
 
+void BadgeApplication::PlayDefaultSound()
+{
+    if (!sound_player_) {
+        ESP_LOGW(TAG, "Sound player is not ready");
+        return;
+    }
+    sound_player_->PlayPcm(badge_default_assets::SoundPcm(), badge_default_assets::SoundSampleCount());
+}
+
+void BadgeApplication::StartEmbeddedWallpaper()
+{
+    current_bwp_.Close();
+    state_ = BadgeState::PlayingEmbeddedWallpaper;
+    embedded_frame_index_ = 0;
+    embedded_next_frame_time_us_ = esp_timer_get_time();
+    DrawEmbeddedWallpaperFrame();
+}
+
+void BadgeApplication::DrawEmbeddedWallpaperFrame()
+{
+    if (embedded_frame_buffer_ == nullptr) {
+        embedded_frame_buffer_ = static_cast<uint16_t*>(heap_caps_malloc(
+            badge_default_assets::kWidth * badge_default_assets::kHeight * sizeof(uint16_t),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (embedded_frame_buffer_ == nullptr) {
+            embedded_frame_buffer_ = static_cast<uint16_t*>(heap_caps_malloc(
+                badge_default_assets::kWidth * badge_default_assets::kHeight * sizeof(uint16_t),
+                MALLOC_CAP_8BIT));
+        }
+    }
+
+    if (embedded_frame_buffer_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to allocate embedded wallpaper frame buffer");
+        state_ = BadgeState::NoSdFallback;
+        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+        return;
+    }
+
+    if (!badge_default_assets::DecodeWallpaperFrame(
+            embedded_frame_index_,
+            embedded_frame_buffer_,
+            badge_default_assets::kWidth * badge_default_assets::kHeight)) {
+        ESP_LOGW(TAG, "Failed to decode embedded wallpaper frame %d", embedded_frame_index_);
+        embedded_frame_index_ = 0;
+        return;
+    }
+
+    board_.DrawRgb565(0, 0, badge_default_assets::kWidth, badge_default_assets::kHeight, embedded_frame_buffer_);
+    embedded_frame_index_ = (embedded_frame_index_ + 1) % badge_default_assets::kFrameCount;
+    embedded_next_frame_time_us_ = esp_timer_get_time() + 1000000LL / badge_default_assets::kFps;
+}
+
 void BadgeApplication::StartRecording()
 {
     if (!storage_.mounted()) {
         ESP_LOGW(TAG, "Cannot record without SD storage");
         state_ = BadgeState::NoSdFallback;
-        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+        StartEmbeddedWallpaper();
         return;
     }
 
@@ -335,7 +408,6 @@ void BadgeApplication::ResumeDisplayAfterRecording()
         next_frame_time_us_ = esp_timer_get_time();
         DrawWallpaperFrame();
     } else {
-        state_ = BadgeState::NoSdFallback;
-        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+        StartEmbeddedWallpaper();
     }
 }

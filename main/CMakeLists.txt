@@ -7,6 +7,7 @@ set(SOURCES
     "badge/badge_storage.cc"
     "badge/badge_settings.cc"
     "badge/badge_bwp.cc"
+    "badge/badge_default_assets.cc"
     "badge/badge_sound.cc"
     "badge/badge_recorder.cc"
     "audio/audio_codec.cc"

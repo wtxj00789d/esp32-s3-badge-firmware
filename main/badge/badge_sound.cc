@@ -126,11 +126,98 @@ bool BadgeSoundPlayer::Play(const char* path)
         ESP_LOGW(TAG, "Sound is already playing");
         return false;
     }
-
-    FILE* file = std::fopen(path, "rb");
-    if (file == nullptr) {
-        ESP_LOGW(TAG, "Failed to open sound file: %s", path);
+    if (path == nullptr) {
+        ESP_LOGW(TAG, "No WAV path provided");
         return false;
+    }
+
+    path_ = path;
+    source_ = Source::File;
+    pcm_samples_ = nullptr;
+    pcm_sample_count_ = 0;
+    return StartTask();
+}
+
+bool BadgeSoundPlayer::PlayPcm(const int16_t* samples, size_t sample_count)
+{
+    if (playing_) {
+        ESP_LOGW(TAG, "Sound is already playing");
+        return false;
+    }
+    if (samples == nullptr || sample_count == 0) {
+        ESP_LOGW(TAG, "No embedded PCM sound data");
+        return false;
+    }
+
+    source_ = Source::Pcm;
+    path_.clear();
+    pcm_samples_ = samples;
+    pcm_sample_count_ = sample_count;
+    return StartTask();
+}
+
+void BadgeSoundPlayer::Stop()
+{
+    stop_requested_ = true;
+    while (playing_ && task_ != nullptr && xTaskGetCurrentTaskHandle() != task_) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+void BadgeSoundPlayer::TaskEntry(void* arg)
+{
+    static_cast<BadgeSoundPlayer*>(arg)->Run();
+    vTaskDelete(nullptr);
+}
+
+bool BadgeSoundPlayer::StartTask()
+{
+    playing_ = true;
+    stop_requested_ = false;
+    BaseType_t ok = xTaskCreate(
+        &BadgeSoundPlayer::TaskEntry,
+        "badge_sound",
+        4096,
+        this,
+        5,
+        &task_);
+    if (ok != pdPASS) {
+        task_ = nullptr;
+        playing_ = false;
+        source_ = Source::None;
+        ESP_LOGE(TAG, "Failed to create sound task");
+        return false;
+    }
+    return true;
+}
+
+void BadgeSoundPlayer::Run()
+{
+    audio_.EnableOutput(true);
+
+    switch (source_) {
+    case Source::File:
+        RunFile();
+        break;
+    case Source::Pcm:
+        RunPcm();
+        break;
+    case Source::None:
+        break;
+    }
+
+    audio_.EnableOutput(false);
+    source_ = Source::None;
+    task_ = nullptr;
+    playing_ = false;
+}
+
+void BadgeSoundPlayer::RunFile()
+{
+    FILE* file = std::fopen(path_.c_str(), "rb");
+    if (file == nullptr) {
+        ESP_LOGW(TAG, "Failed to open sound file: %s", path_.c_str());
+        return;
     }
 
     uint32_t data_offset = 0;
@@ -138,14 +225,10 @@ bool BadgeSoundPlayer::Play(const char* path)
     if (!ParseWav(file, data_offset, data_size) ||
         std::fseek(file, static_cast<long>(data_offset), SEEK_SET) != 0) {
         std::fclose(file);
-        return false;
+        return;
     }
 
-    ESP_LOGI(TAG, "Play WAV: %s (%lu bytes)", path, static_cast<unsigned long>(data_size));
-    playing_ = true;
-    stop_requested_ = false;
-    audio_.EnableOutput(true);
-
+    ESP_LOGI(TAG, "Play WAV: %s (%lu bytes)", path_.c_str(), static_cast<unsigned long>(data_size));
     std::vector<int16_t> samples(kChunkSamples);
     uint32_t remaining = data_size;
     while (remaining > 0 && !stop_requested_) {
@@ -163,13 +246,19 @@ bool BadgeSoundPlayer::Play(const char* path)
         remaining -= static_cast<uint32_t>(bytes_read);
     }
 
-    audio_.EnableOutput(false);
-    playing_ = false;
     std::fclose(file);
-    return true;
 }
 
-void BadgeSoundPlayer::Stop()
+void BadgeSoundPlayer::RunPcm()
 {
-    stop_requested_ = true;
+    ESP_LOGI(TAG, "Play embedded PCM sound (%u samples)", static_cast<unsigned>(pcm_sample_count_));
+    std::vector<int16_t> chunk;
+    chunk.reserve(kChunkSamples);
+    size_t offset = 0;
+    while (offset < pcm_sample_count_ && !stop_requested_) {
+        const size_t count = std::min<size_t>(kChunkSamples, pcm_sample_count_ - offset);
+        chunk.assign(pcm_samples_ + offset, pcm_samples_ + offset + count);
+        audio_.OutputData(chunk);
+        offset += count;
+    }
 }

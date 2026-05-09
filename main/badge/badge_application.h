@@ -16,6 +16,7 @@ enum class BadgeState {
     Booting,
     NoSdFallback,
     PlayingWallpaper,
+    PlayingEmbeddedWallpaper,
     PlayingSound,
     Recording,
     ErrorNotice,
@@ -40,9 +41,13 @@ private:
     BadgeBwp current_bwp_;
     std::unique_ptr<BadgeSoundPlayer> sound_player_;
     std::unique_ptr<BadgeRecorder> recorder_;
+    uint16_t* embedded_frame_buffer_ = nullptr;
+    int embedded_frame_index_ = 0;
+    int64_t embedded_next_frame_time_us_ = 0;
     size_t current_media_index_ = 0;
     int current_frame_index_ = 0;
     int64_t next_frame_time_us_ = 0;
+    int64_t ignore_button_until_us_ = 0;
     BadgeState state_ = BadgeState::Booting;
     QueueHandle_t action_queue_ = nullptr;
 
@@ -53,6 +58,9 @@ private:
     void SelectInitialWallpaper();
     void AdvanceWallpaper();
     void PlayCurrentSound();
+    void PlayDefaultSound();
+    void StartEmbeddedWallpaper();
+    void DrawEmbeddedWallpaperFrame();
     void StartRecording();
     void StopRecording();
     void ResumeDisplayAfterRecording();

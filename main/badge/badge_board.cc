@@ -42,6 +42,8 @@ constexpr gpio_num_t kAudioI2cScl = GPIO_NUM_14;
 constexpr int kAudioSampleRate = 24000;
 
 constexpr gpio_num_t kBootButton = GPIO_NUM_0;
+constexpr uint16_t kBootLongPressMs = 2000;
+constexpr uint16_t kBootShortPressMs = 50;
 
 constexpr ledc_mode_t kBacklightLedcMode = LEDC_LOW_SPEED_MODE;
 constexpr ledc_timer_t kBacklightLedcTimer = LEDC_TIMER_1;
@@ -236,7 +238,7 @@ void BadgeBoard::InitializeAudio()
 void BadgeBoard::InitializeButton()
 {
     ESP_LOGI(TAG, "Initialize BOOT button");
-    boot_button_ = new Button(kBootButton);
+    boot_button_ = new Button(kBootButton, false, kBootLongPressMs, kBootShortPressMs);
     boot_button_->OnClick([this]() {
         EmitButtonEvent(BadgeButtonEvent::SingleClick);
     });
