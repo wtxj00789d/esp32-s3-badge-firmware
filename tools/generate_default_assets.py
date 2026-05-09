@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import argparse
 import bisect
+import statistics
 import textwrap
 
 import miniaudio
@@ -54,8 +55,47 @@ def load_gif_frames(path: Path) -> tuple[list[Image.Image], list[int]]:
     return frames, durations
 
 
+def white_bbox_center(frame: Image.Image) -> tuple[float, float] | None:
+    gray = frame.convert("RGBA")
+    bg = Image.new("RGBA", gray.size, (0, 0, 0, 255))
+    bg.alpha_composite(gray)
+    luminance = bg.convert("L")
+    points = []
+    for y in range(luminance.height):
+        for x in range(luminance.width):
+            if luminance.getpixel((x, y)) >= 128:
+                points.append((x, y))
+    if not points:
+        return None
+    xs = [x for x, _ in points]
+    ys = [y for _, y in points]
+    return ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+
+
+def shift_frame(frame: Image.Image, dx: int, dy: int) -> Image.Image:
+    rgba = frame.convert("RGBA")
+    shifted = Image.new("RGBA", rgba.size, (0, 0, 0, 255))
+    shifted.alpha_composite(rgba, (dx, dy))
+    return shifted
+
+
+def center_frames(frames: list[Image.Image]) -> tuple[list[Image.Image], int, int]:
+    centers = [center for frame in frames if (center := white_bbox_center(frame)) is not None]
+    if not centers:
+        return frames, 0, 0
+    source_center_x = (frames[0].width - 1) / 2
+    source_center_y = (frames[0].height - 1) / 2
+    mean_x = statistics.mean(center[0] for center in centers)
+    mean_y = statistics.mean(center[1] for center in centers)
+    dx = round(source_center_x - mean_x)
+    dy = round(source_center_y - mean_y)
+    return [shift_frame(frame, dx, dy) for frame in frames], dx, dy
+
+
 def sample_gif(path: Path) -> list[bytes]:
     frames, durations = load_gif_frames(path)
+    frames, dx, dy = center_frames(frames)
+    print(f"wallpaper_center_shift=({dx},{dy})")
     cumulative = []
     total = 0
     for duration in durations:
