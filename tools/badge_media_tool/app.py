@@ -72,11 +72,19 @@ class BadgeMediaTool:
         self.max_frames_var = IntVar(value=60)
         self.wallpaper_status_var = StringVar(value="Ready")
         self.wallpaper_progress_var = DoubleVar(value=0.0)
+        self.wallpaper_duration_seconds = 0.0
+        self.wallpaper_start_var = DoubleVar(value=0.0)
+        self.wallpaper_end_var = DoubleVar(value=0.0)
+        self.wallpaper_range_var = StringVar(value="Range: 0.00s - 0.00s")
 
         self.audio_file_var = StringVar(value="No audio selected")
         self.audio_output_var = StringVar(value=str(BUILD_DIR / "001.WAV"))
         self.audio_status_var = StringVar(value="Ready")
         self.audio_progress_var = DoubleVar(value=0.0)
+        self.audio_duration_seconds = 0.0
+        self.audio_start_var = DoubleVar(value=0.0)
+        self.audio_end_var = DoubleVar(value=0.0)
+        self.audio_range_var = StringVar(value="Range: 0.00s - 0.00s")
 
         self.busy = False
         self._build_ui()
@@ -122,6 +130,16 @@ class BadgeMediaTool:
         self.convert_wallpaper_button = ttk.Button(options, text="Convert BWP", command=self.start_wallpaper_conversion)
         self.convert_wallpaper_button.pack(side=RIGHT)
 
+        range_frame = ttk.Frame(self.wallpaper_tab, padding=(10, 0, 10, 8))
+        range_frame.pack(fill=X)
+        ttk.Label(range_frame, text="Start:").pack(side=LEFT)
+        self.wallpaper_start_scale = ttk.Scale(range_frame, from_=0, to=0, variable=self.wallpaper_start_var, command=self.on_wallpaper_range_changed)
+        self.wallpaper_start_scale.pack(side=LEFT, fill=X, expand=True, padx=(4, 12))
+        ttk.Label(range_frame, text="End:").pack(side=LEFT)
+        self.wallpaper_end_scale = ttk.Scale(range_frame, from_=0, to=0, variable=self.wallpaper_end_var, command=self.on_wallpaper_range_changed)
+        self.wallpaper_end_scale.pack(side=LEFT, fill=X, expand=True, padx=(4, 12))
+        ttk.Label(range_frame, textvariable=self.wallpaper_range_var, width=28).pack(side=RIGHT)
+
         output = ttk.Frame(self.wallpaper_tab, padding=(10, 0, 10, 8))
         output.pack(fill=X)
         ttk.Label(output, text="Output:").pack(side=LEFT)
@@ -155,6 +173,16 @@ class BadgeMediaTool:
         self.convert_audio_button = ttk.Button(controls, text="Convert WAV", command=self.start_audio_conversion)
         self.convert_audio_button.pack(side=RIGHT)
 
+        range_frame = ttk.Frame(self.audio_tab, padding=(10, 0, 10, 8))
+        range_frame.pack(fill=X)
+        ttk.Label(range_frame, text="Start:").pack(side=LEFT)
+        self.audio_start_scale = ttk.Scale(range_frame, from_=0, to=0, variable=self.audio_start_var, command=self.on_audio_range_changed)
+        self.audio_start_scale.pack(side=LEFT, fill=X, expand=True, padx=(4, 12))
+        ttk.Label(range_frame, text="End:").pack(side=LEFT)
+        self.audio_end_scale = ttk.Scale(range_frame, from_=0, to=0, variable=self.audio_end_var, command=self.on_audio_range_changed)
+        self.audio_end_scale.pack(side=LEFT, fill=X, expand=True, padx=(4, 12))
+        ttk.Label(range_frame, textvariable=self.audio_range_var, width=28).pack(side=RIGHT)
+
         progress_frame = ttk.Frame(self.audio_tab, padding=(10, 0, 10, 6))
         progress_frame.pack(fill=X)
         ttk.Progressbar(progress_frame, variable=self.audio_progress_var, maximum=100).pack(fill=X)
@@ -187,6 +215,56 @@ class BadgeMediaTool:
             widget.configure(state=state)
         for widget in (self.fps_combo, self.max_frames_combo):
             widget.configure(state=combo_state)
+        for widget in (self.wallpaper_start_scale, self.wallpaper_end_scale, self.audio_start_scale, self.audio_end_scale):
+            widget.configure(state=state)
+
+    @staticmethod
+    def format_seconds(seconds: float) -> str:
+        return f"{max(0.0, seconds):.2f}s"
+
+    def clamp_range(self, start: float, end: float, duration: float) -> tuple[float, float]:
+        duration = max(0.0, duration)
+        start = min(max(0.0, start), duration)
+        end = min(max(0.0, end), duration)
+        if duration <= 0.0:
+            return 0.0, 0.0
+        if end <= start:
+            if start >= duration:
+                start = max(0.0, duration - 0.01)
+                end = duration
+            else:
+                end = min(duration, start + 0.01)
+        return start, end
+
+    def update_range_label(self, target: str) -> None:
+        if target == "wallpaper":
+            start = self.wallpaper_start_var.get()
+            end = self.wallpaper_end_var.get()
+            self.wallpaper_range_var.set(
+                f"Range: {self.format_seconds(start)} - {self.format_seconds(end)} ({self.format_seconds(end - start)})"
+            )
+        else:
+            start = self.audio_start_var.get()
+            end = self.audio_end_var.get()
+            self.audio_range_var.set(
+                f"Range: {self.format_seconds(start)} - {self.format_seconds(end)} ({self.format_seconds(end - start)})"
+            )
+
+    def on_wallpaper_range_changed(self, _value=None) -> None:
+        start, end = self.clamp_range(self.wallpaper_start_var.get(), self.wallpaper_end_var.get(), self.wallpaper_duration_seconds)
+        self.wallpaper_start_var.set(start)
+        self.wallpaper_end_var.set(end)
+        self.update_range_label("wallpaper")
+        if self.media_frames:
+            self.preview_index = self.frame_index_at_time(start)
+            self.preview_image = self.media_frames[self.preview_index][0]
+            self.redraw_preview()
+
+    def on_audio_range_changed(self, _value=None) -> None:
+        start, end = self.clamp_range(self.audio_start_var.get(), self.audio_end_var.get(), self.audio_duration_seconds)
+        self.audio_start_var.set(start)
+        self.audio_end_var.set(end)
+        self.update_range_label("audio")
 
     def selected_fps(self) -> int:
         try:
@@ -226,10 +304,22 @@ class BadgeMediaTool:
             return
         path = filedialog.askopenfilename(filetypes=AUDIO_FILETYPES)
         if path:
+            try:
+                duration = audio.audio_duration_seconds(path)
+            except Exception as exc:
+                messagebox.showerror("Audio error", str(exc))
+                self.log_audio(f"Failed to load audio: {exc}")
+                return
             self.audio_file_var.set(path)
             source = Path(path)
             self.audio_output_var.set(str(BUILD_DIR / f"{source.stem}.WAV"))
-            self.log_audio(f"Loaded {source.name}")
+            self.audio_duration_seconds = duration
+            self.audio_start_scale.configure(to=duration)
+            self.audio_end_scale.configure(to=duration)
+            self.audio_start_var.set(0.0)
+            self.audio_end_var.set(duration)
+            self.update_range_label("audio")
+            self.log_audio(f"Loaded {source.name}: duration={duration:.2f}s")
 
     def choose_audio_output(self) -> None:
         path = filedialog.asksaveasfilename(defaultextension=".WAV", filetypes=[("WAV files", "*.WAV"), ("All files", "*.*")])
@@ -247,6 +337,12 @@ class BadgeMediaTool:
             return
         self.media_path = Path(path)
         self.media_frames = [(image.convert("RGB"), delay) for image, delay in frames]
+        self.wallpaper_duration_seconds = bwp.frames_duration_ms(self.media_frames) / 1000
+        self.wallpaper_start_scale.configure(to=self.wallpaper_duration_seconds)
+        self.wallpaper_end_scale.configure(to=self.wallpaper_duration_seconds)
+        self.wallpaper_start_var.set(0.0)
+        self.wallpaper_end_var.set(self.wallpaper_duration_seconds)
+        self.update_range_label("wallpaper")
         self.preview_index = 0
         self.preview_image = self.media_frames[0][0]
         self.wallpaper_file_var.set(str(self.media_path))
@@ -258,13 +354,31 @@ class BadgeMediaTool:
         self.crop = (left, top, left + side, top + side)
         self.redraw_preview()
         self.start_preview()
-        self.log_wallpaper(f"Loaded {self.media_path.name}: {width} x {height}, preview frames={len(frames)}, fps={fps}")
+        self.log_wallpaper(
+            f"Loaded {self.media_path.name}: {width} x {height}, duration={self.wallpaper_duration_seconds:.2f}s, preview frames={len(frames)}, fps={fps}"
+        )
+
+    def frame_index_at_time(self, seconds: float) -> int:
+        target_ms = max(0, int(round(seconds * 1000)))
+        elapsed = 0
+        for index, (_image, duration) in enumerate(self.media_frames):
+            elapsed += duration
+            if elapsed > target_ms:
+                return index
+        return max(0, len(self.media_frames) - 1)
+
+    def frame_start_seconds(self, index: int) -> float:
+        elapsed = 0
+        for _image, duration in self.media_frames[: max(0, index)]:
+            elapsed += duration
+        return elapsed / 1000
 
     def start_preview(self) -> None:
         if self.preview_job is not None:
             self.root.after_cancel(self.preview_job)
             self.preview_job = None
         if len(self.media_frames) > 1:
+            self.preview_index = self.frame_index_at_time(self.wallpaper_start_var.get())
             self.schedule_preview()
 
     def schedule_preview(self) -> None:
@@ -277,7 +391,10 @@ class BadgeMediaTool:
         if len(self.media_frames) <= 1:
             self.preview_job = None
             return
-        self.preview_index = (self.preview_index + 1) % len(self.media_frames)
+        next_index = self.preview_index + 1
+        if next_index >= len(self.media_frames) or self.frame_start_seconds(next_index) >= self.wallpaper_end_var.get():
+            next_index = self.frame_index_at_time(self.wallpaper_start_var.get())
+        self.preview_index = next_index
         self.preview_image = self.media_frames[self.preview_index][0]
         self.redraw_preview()
         self.schedule_preview()
@@ -386,32 +503,53 @@ class BadgeMediaTool:
         crop = self.canvas_crop_to_image_crop()
         fps = self.selected_fps()
         max_frames = self.selected_max_frames()
+        start_seconds = self.wallpaper_start_var.get()
+        end_seconds = self.wallpaper_end_var.get()
         self.wallpaper_progress_var.set(0)
         self.set_busy(True)
         self.log_wallpaper("Starting BWP conversion")
-        threading.Thread(target=self._run_wallpaper_conversion, args=(self.media_path, output, crop, fps, max_frames), daemon=True).start()
+        threading.Thread(target=self._run_wallpaper_conversion, args=(self.media_path, output, crop, fps, max_frames, start_seconds, end_seconds), daemon=True).start()
 
-    def _run_wallpaper_conversion(self, media_path: Path, output: Path, crop: tuple[int, int, int, int], fps: int, max_frames: int) -> None:
+    def _run_wallpaper_conversion(
+        self,
+        media_path: Path,
+        output: Path,
+        crop: tuple[int, int, int, int],
+        fps: int,
+        max_frames: int,
+        start_seconds: float,
+        end_seconds: float,
+    ) -> None:
         try:
             def progress(done: int, total: int, message: str) -> None:
                 self.root.after(0, self.update_wallpaper_progress, done, total, message)
 
-            result = bwp.convert_media_to_bwp(str(media_path), str(output), fps=fps, max_frames=max_frames, crop=crop, ffmpeg_path=resolve_ffmpeg(), progress=progress)
+            result = bwp.convert_media_to_bwp(
+                str(media_path),
+                str(output),
+                fps=fps,
+                max_frames=max_frames,
+                crop=crop,
+                start_seconds=start_seconds,
+                end_seconds=end_seconds,
+                ffmpeg_path=resolve_ffmpeg(),
+                progress=progress,
+            )
             size = result.stat().st_size
         except Exception as exc:
             self.root.after(0, self._wallpaper_failed, str(exc))
             return
-        self.root.after(0, self._wallpaper_done, result, size, fps, crop)
+        self.root.after(0, self._wallpaper_done, result, size, fps, crop, start_seconds, end_seconds)
 
     def _wallpaper_failed(self, error: str) -> None:
         self.set_busy(False)
         messagebox.showerror("BWP conversion error", error)
         self.log_wallpaper(f"Conversion failed: {error}")
 
-    def _wallpaper_done(self, output: Path, size: int, fps: int, crop: tuple[int, int, int, int]) -> None:
+    def _wallpaper_done(self, output: Path, size: int, fps: int, crop: tuple[int, int, int, int], start_seconds: float, end_seconds: float) -> None:
         self.wallpaper_progress_var.set(100)
         self.set_busy(False)
-        self.log_wallpaper(f"Wrote {output} ({size} bytes), fps={fps}, crop={crop}")
+        self.log_wallpaper(f"Wrote {output} ({size} bytes), fps={fps}, range={start_seconds:.2f}-{end_seconds:.2f}s, crop={crop}")
         messagebox.showinfo("BWP conversion complete", f"Saved:\n{output}")
 
     def start_audio_conversion(self) -> None:
@@ -422,29 +560,31 @@ class BadgeMediaTool:
             messagebox.showwarning("No audio", "Choose audio first.")
             return
         output = Path(self.audio_output_var.get().strip() or (BUILD_DIR / "001.WAV"))
+        start_seconds = self.audio_start_var.get()
+        end_seconds = self.audio_end_var.get()
         self.audio_progress_var.set(10)
         self.set_busy(True)
         self.log_audio("Starting WAV conversion")
-        threading.Thread(target=self._run_audio_conversion, args=(input_path, output), daemon=True).start()
+        threading.Thread(target=self._run_audio_conversion, args=(input_path, output, start_seconds, end_seconds), daemon=True).start()
 
-    def _run_audio_conversion(self, input_path: str, output: Path) -> None:
+    def _run_audio_conversion(self, input_path: str, output: Path, start_seconds: float, end_seconds: float) -> None:
         try:
-            result = audio.convert_audio_to_badge_wav(input_path, str(output))
+            result = audio.convert_audio_to_badge_wav(input_path, str(output), start_seconds=start_seconds, end_seconds=end_seconds)
             size = result.stat().st_size
         except Exception as exc:
             self.root.after(0, self._audio_failed, str(exc))
             return
-        self.root.after(0, self._audio_done, result, size)
+        self.root.after(0, self._audio_done, result, size, start_seconds, end_seconds)
 
     def _audio_failed(self, error: str) -> None:
         self.set_busy(False)
         messagebox.showerror("Audio conversion error", error)
         self.log_audio(f"Conversion failed: {error}")
 
-    def _audio_done(self, output: Path, size: int) -> None:
+    def _audio_done(self, output: Path, size: int, start_seconds: float, end_seconds: float) -> None:
         self.audio_progress_var.set(100)
         self.set_busy(False)
-        self.log_audio(f"Wrote {output} ({size} bytes), 16000Hz mono s16 PCM")
+        self.log_audio(f"Wrote {output} ({size} bytes), 16000Hz mono s16 PCM, range={start_seconds:.2f}-{end_seconds:.2f}s")
         messagebox.showinfo("Audio conversion complete", f"Saved:\n{output}")
 
 
@@ -457,9 +597,13 @@ def main(argv=None):
     bwp_parser.add_argument("--fps", type=int, default=bwp.DEFAULT_FPS, choices=FPS_CHOICES)
     bwp_parser.add_argument("--max-frames", type=int, default=bwp.DEFAULT_MAX_FRAMES)
     bwp_parser.add_argument("--crop", help="Square crop as left,top,right,bottom")
+    bwp_parser.add_argument("--start", type=float, default=0.0, help="Start time in seconds")
+    bwp_parser.add_argument("--end", type=float, help="End time in seconds")
     wav_parser = sub.add_parser("wav", help="Convert audio to badge WAV")
     wav_parser.add_argument("input")
     wav_parser.add_argument("--output", "-o", required=True)
+    wav_parser.add_argument("--start", type=float, default=0.0, help="Start time in seconds")
+    wav_parser.add_argument("--end", type=float, help="End time in seconds")
     args = parser.parse_args(argv)
 
     if args.command == "bwp":
@@ -469,10 +613,21 @@ def main(argv=None):
             if len(values) != 4:
                 raise ValueError("--crop expects left,top,right,bottom")
             crop = tuple(values)
-        print(bwp.convert_media_to_bwp(args.input, args.output, fps=args.fps, max_frames=args.max_frames, crop=crop, ffmpeg_path=resolve_ffmpeg()))
+        print(
+            bwp.convert_media_to_bwp(
+                args.input,
+                args.output,
+                fps=args.fps,
+                max_frames=args.max_frames,
+                crop=crop,
+                start_seconds=args.start,
+                end_seconds=args.end,
+                ffmpeg_path=resolve_ffmpeg(),
+            )
+        )
         return 0
     if args.command == "wav":
-        print(audio.convert_audio_to_badge_wav(args.input, args.output))
+        print(audio.convert_audio_to_badge_wav(args.input, args.output, start_seconds=args.start, end_seconds=args.end))
         return 0
 
     root = Tk()

@@ -20,16 +20,16 @@ python tools\badge_media_tool\app.py
 ## CLI
 
 ```powershell
-python tools\badge_media_tool\app.py bwp input.gif --output 001.BWP --fps 15 --max-frames 60
-python tools\badge_media_tool\app.py wav input.mp3 --output 001.WAV
+python tools\badge_media_tool\app.py bwp input.gif --output 001.BWP --fps 15 --max-frames 60 --start 1.2 --end 4.8
+python tools\badge_media_tool\app.py wav input.mp3 --output 001.WAV --start 3.0 --end 12.5
 ```
 
 Packaged executables:
 
 ```powershell
 tools\badge_media_tool\dist\BadgeMediaTool.exe
-tools\badge_media_tool\dist\BadgeMediaToolCLI.exe bwp input.gif --output 001.BWP --fps 15 --max-frames 60
-tools\badge_media_tool\dist\BadgeMediaToolCLI.exe wav input.mp3 --output 001.WAV
+tools\badge_media_tool\dist\BadgeMediaToolCLI.exe bwp input.gif --output 001.BWP --fps 15 --max-frames 60 --start 1.2 --end 4.8
+tools\badge_media_tool\dist\BadgeMediaToolCLI.exe wav input.mp3 --output 001.WAV --start 3.0 --end 12.5
 ```
 
 Rebuild:
@@ -44,4 +44,4 @@ python -m PyInstaller tools\badge_media_tool\BadgeMediaToolCLI.spec --distpath t
 - BWP: `BWP1`, 240x240, max 20fps, raw RGB565 frames.
 - WAV: 16000Hz, mono, signed 16-bit PCM.
 
-The current firmware loads a BWP file into PSRAM, so the GUI defaults to 60 frames.
+The GUI can select a start/end range before export. The current firmware loads a BWP file into PSRAM, so the GUI defaults to 60 frames.

@@ -22,6 +22,10 @@ IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 ProgressCallback = Callable[[int, int, str], None]
 
 
+def frames_duration_ms(frames: list[tuple[Image.Image, int]]) -> int:
+    return sum(duration for _image, duration in frames)
+
+
 def default_max_duration_ms(fps: int, max_frames: int = DEFAULT_MAX_FRAMES) -> int:
     fps = max(1, min(MAX_FPS, int(fps)))
     return int(max_frames * 1000 / fps)
@@ -138,6 +142,40 @@ def square_crop(size: tuple[int, int], crop: tuple[int, int, int, int] | None) -
     return left, top, right, bottom
 
 
+def time_range_ms(start_seconds: float | None, end_seconds: float | None) -> tuple[int, int | None]:
+    start_ms = max(0, int(round((start_seconds or 0.0) * 1000)))
+    end_ms = None if end_seconds is None else max(0, int(round(end_seconds * 1000)))
+    if end_ms is not None and end_ms <= start_ms:
+        raise ValueError("end time must be greater than start time")
+    return start_ms, end_ms
+
+
+def trim_frames_by_time(
+    source_frames: list[tuple[Image.Image, int]],
+    start_ms: int,
+    end_ms: int | None,
+) -> list[tuple[Image.Image, int]]:
+    if not source_frames:
+        return []
+    elapsed = 0
+    trimmed = []
+    for image, duration in source_frames:
+        frame_start = elapsed
+        frame_end = elapsed + duration
+        elapsed = frame_end
+        if frame_end <= start_ms:
+            continue
+        if end_ms is not None and frame_start >= end_ms:
+            break
+        clipped_start = max(frame_start, start_ms)
+        clipped_end = min(frame_end, end_ms) if end_ms is not None else frame_end
+        clipped_duration = max(1, clipped_end - clipped_start)
+        trimmed.append((image, clipped_duration))
+    if not trimmed:
+        raise ValueError("selected time range contains no frames")
+    return trimmed
+
+
 def convert_frames_to_rgb565(
     source_frames: list[tuple[Image.Image, int]],
     fps: int,
@@ -191,6 +229,8 @@ def convert_media_to_bwp(
     fps: int = DEFAULT_FPS,
     max_frames: int = DEFAULT_MAX_FRAMES,
     crop: tuple[int, int, int, int] | None = None,
+    start_seconds: float | None = None,
+    end_seconds: float | None = None,
     ffmpeg_path: str | None = None,
     progress: ProgressCallback | None = None,
 ) -> Path:
@@ -199,15 +239,19 @@ def convert_media_to_bwp(
         raise FileNotFoundError(source)
     fps = max(1, min(MAX_FPS, int(fps)))
     max_frames = max(1, int(max_frames))
-    max_duration_ms = default_max_duration_ms(fps, max_frames)
+    start_ms, end_ms = time_range_ms(start_seconds, end_seconds)
+    max_output_duration_ms = default_max_duration_ms(fps, max_frames)
+    load_duration_ms = end_ms if end_ms is not None else start_ms + max_output_duration_ms
     suffix = source.suffix.lower()
     if suffix in VIDEO_SUFFIXES:
-        source_frames = load_media_frames(str(source), fps, max_duration_ms, ffmpeg_path, crop, (WIDTH, HEIGHT))
+        source_frames = load_media_frames(str(source), fps, load_duration_ms, ffmpeg_path, crop, (WIDTH, HEIGHT))
         work_crop = (0, 0, WIDTH, HEIGHT)
     else:
-        source_frames = load_media_frames(str(source), fps, max_duration_ms, ffmpeg_path)
+        source_frames = load_media_frames(str(source), fps, load_duration_ms, ffmpeg_path)
         work_crop = crop
-    frames = convert_frames_to_rgb565(source_frames, fps, max_duration_ms, max_frames, work_crop, progress)
+    selected_frames = trim_frames_by_time(source_frames, start_ms, end_ms)
+    selected_duration_ms = min(frames_duration_ms(selected_frames), max_output_duration_ms)
+    frames = convert_frames_to_rgb565(selected_frames, fps, selected_duration_ms, max_frames, work_crop, progress)
     blob = build_bwp(frames, fps)
     target = Path(output_path)
     target.parent.mkdir(parents=True, exist_ok=True)

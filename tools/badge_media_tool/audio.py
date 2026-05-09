@@ -13,6 +13,15 @@ CHANNELS = 1
 SAMPLE_WIDTH = 2
 
 
+def clamp_sample_range(sample_count: int, start_seconds: float | None, end_seconds: float | None) -> tuple[int, int]:
+    start = max(0, int(round((start_seconds or 0.0) * SAMPLE_RATE)))
+    end = sample_count if end_seconds is None else max(0, int(round(end_seconds * SAMPLE_RATE)))
+    end = min(end, sample_count)
+    if end <= start:
+        raise ValueError("end time must be greater than start time")
+    return start, end
+
+
 def decode_audio_to_samples(input_path: str) -> list[int]:
     source = Path(input_path)
     if not source.exists():
@@ -29,6 +38,13 @@ def decode_audio_to_samples(input_path: str) -> list[int]:
         return list(decoded.samples)
 
 
+def audio_duration_seconds(input_path: str) -> float:
+    samples = decode_audio_to_samples(input_path)
+    if not samples:
+        raise ValueError("audio produced no samples")
+    return len(samples) / SAMPLE_RATE
+
+
 def write_wav(output_path: str, samples: list[int]) -> Path:
     target = Path(output_path)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -40,8 +56,14 @@ def write_wav(output_path: str, samples: list[int]) -> Path:
     return target
 
 
-def convert_audio_to_badge_wav(input_path: str, output_path: str) -> Path:
+def convert_audio_to_badge_wav(
+    input_path: str,
+    output_path: str,
+    start_seconds: float | None = None,
+    end_seconds: float | None = None,
+) -> Path:
     samples = decode_audio_to_samples(input_path)
     if not samples:
         raise ValueError("audio produced no samples")
-    return write_wav(output_path, samples)
+    start, end = clamp_sample_range(len(samples), start_seconds, end_seconds)
+    return write_wav(output_path, samples[start:end])
