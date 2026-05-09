@@ -30,6 +30,8 @@ void BadgeApplication::Initialize()
 {
     ESP_LOGI(TAG, "Initialize badge firmware");
     board_.Initialize();
+    sound_player_ = std::make_unique<BadgeSoundPlayer>(board_.Audio());
+    recorder_ = std::make_unique<BadgeRecorder>(board_.Audio());
 
     action_queue_ = xQueueCreate(8, sizeof(BadgeAction));
     if (action_queue_ == nullptr) {
@@ -165,6 +167,7 @@ void BadgeApplication::HandleAction(BadgeAction action)
     switch (action) {
     case BadgeAction::PlaySound:
         ESP_LOGI(TAG, "Action: play sound");
+        PlayCurrentSound();
         break;
     case BadgeAction::NextWallpaper:
         ESP_LOGI(TAG, "Action: next wallpaper");
@@ -172,18 +175,11 @@ void BadgeApplication::HandleAction(BadgeAction action)
         break;
     case BadgeAction::StartRecording:
         ESP_LOGI(TAG, "Action: start recording");
-        state_ = BadgeState::Recording;
-        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::RecordingPage());
+        StartRecording();
         break;
     case BadgeAction::StopRecording:
         ESP_LOGI(TAG, "Action: stop recording");
-        if (current_bwp_.loaded()) {
-            state_ = BadgeState::PlayingWallpaper;
-            DrawWallpaperFrame();
-        } else {
-            state_ = BadgeState::NoSdFallback;
-            board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
-        }
+        StopRecording();
         break;
     }
 }
@@ -270,4 +266,76 @@ void BadgeApplication::AdvanceWallpaper()
     current_bwp_.Close();
     state_ = BadgeState::NoSdFallback;
     board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+}
+
+void BadgeApplication::PlayCurrentSound()
+{
+    const auto& media = storage_.Media();
+    if (!storage_.mounted() || media.empty() || current_media_index_ >= media.size()) {
+        ESP_LOGW(TAG, "No SD media sound available");
+        return;
+    }
+
+    const BadgeMediaItem& item = media[current_media_index_];
+    if (!item.has_wav) {
+        ESP_LOGW(TAG, "No matching WAV for %s", item.basename.c_str());
+        return;
+    }
+
+    if (!sound_player_) {
+        ESP_LOGW(TAG, "Sound player is not ready");
+        return;
+    }
+
+    sound_player_->Play(item.wav_path.c_str());
+}
+
+void BadgeApplication::StartRecording()
+{
+    if (!storage_.mounted()) {
+        ESP_LOGW(TAG, "Cannot record without SD storage");
+        state_ = BadgeState::NoSdFallback;
+        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+        return;
+    }
+
+    if (!recorder_) {
+        ESP_LOGW(TAG, "Recorder is not ready");
+        return;
+    }
+
+    if (sound_player_ && sound_player_->playing()) {
+        sound_player_->Stop();
+    }
+
+    const int recording_number = settings_.NextRecordingNumber();
+    const std::string path = storage_.NextRecordingPath(recording_number);
+    if (!recorder_->Start(path.c_str())) {
+        state_ = BadgeState::ErrorNotice;
+        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::ErrorPage());
+        return;
+    }
+
+    state_ = BadgeState::Recording;
+    board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::RecordingPage());
+}
+
+void BadgeApplication::StopRecording()
+{
+    if (recorder_) {
+        recorder_->Stop();
+    }
+    ResumeDisplayAfterRecording();
+}
+
+void BadgeApplication::ResumeDisplayAfterRecording()
+{
+    if (current_bwp_.loaded()) {
+        state_ = BadgeState::PlayingWallpaper;
+        next_frame_time_us_ = esp_timer_get_time();
+        DrawWallpaperFrame();
+    } else {
+        state_ = BadgeState::NoSdFallback;
+        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+    }
 }
