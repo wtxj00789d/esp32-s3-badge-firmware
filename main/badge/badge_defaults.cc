@@ -1,11 +1,13 @@
 #include "badge_defaults.h"
 
-#include <array>
+#include <esp_heap_caps.h>
+#include <esp_log.h>
 
 namespace {
-std::array<uint16_t, badge_defaults::kPixelCount> MakePage(uint16_t bg, uint16_t ring, uint16_t center)
+constexpr const char* TAG = "BadgeDefaults";
+
+void FillPage(uint16_t* page, uint16_t bg, uint16_t ring, uint16_t center)
 {
-    std::array<uint16_t, badge_defaults::kPixelCount> page {};
     constexpr int center_x = badge_defaults::kWidth / 2;
     constexpr int center_y = badge_defaults::kHeight / 2;
     constexpr int outer_radius = 92;
@@ -31,7 +33,23 @@ std::array<uint16_t, badge_defaults::kPixelCount> MakePage(uint16_t bg, uint16_t
             page[y * badge_defaults::kWidth + x] = color;
         }
     }
+}
 
+const uint16_t* GetPage(uint16_t bg, uint16_t ring, uint16_t center)
+{
+    uint16_t* page = static_cast<uint16_t*>(heap_caps_malloc(
+        badge_defaults::kPixelCount * sizeof(uint16_t),
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (page == nullptr) {
+        page = static_cast<uint16_t*>(heap_caps_malloc(
+            badge_defaults::kPixelCount * sizeof(uint16_t),
+            MALLOC_CAP_8BIT));
+    }
+    if (page == nullptr) {
+        ESP_LOGE(TAG, "Failed to allocate default page buffer");
+        return nullptr;
+    }
+    FillPage(page, bg, ring, center);
     return page;
 }
 }
@@ -39,19 +57,19 @@ std::array<uint16_t, badge_defaults::kPixelCount> MakePage(uint16_t bg, uint16_t
 namespace badge_defaults {
 const uint16_t* DefaultPage()
 {
-    static const auto page = MakePage(0x0000, 0x07E0, 0xFFFF);
-    return page.data();
+    static const uint16_t* page = GetPage(0x0000, 0x07E0, 0xFFFF);
+    return page;
 }
 
 const uint16_t* RecordingPage()
 {
-    static const auto page = MakePage(0x0000, 0xF800, 0xFFFF);
-    return page.data();
+    static const uint16_t* page = GetPage(0x0000, 0xF800, 0xFFFF);
+    return page;
 }
 
 const uint16_t* ErrorPage()
 {
-    static const auto page = MakePage(0x0000, 0xFFE0, 0xF800);
-    return page.data();
+    static const uint16_t* page = GetPage(0x0000, 0xFFE0, 0xF800);
+    return page;
 }
 }
