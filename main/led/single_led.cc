@@ -1,5 +1,4 @@
 #include "single_led.h"
-#include "application.h"
 #include <esp_log.h> 
 
 #define TAG "SingleLed"
@@ -117,47 +116,5 @@ void SingleLed::OnBlinkTimer() {
 
 
 void SingleLed::OnStateChanged() {
-    auto& app = Application::GetInstance();
-    auto device_state = app.GetDeviceState();
-    switch (device_state) {
-        case kDeviceStateStarting:
-            SetColor(0, 0, DEFAULT_BRIGHTNESS);
-            StartContinuousBlink(100);
-            break;
-        case kDeviceStateWifiConfiguring:
-            SetColor(0, 0, DEFAULT_BRIGHTNESS);
-            StartContinuousBlink(500);
-            break;
-        case kDeviceStateIdle:
-            TurnOff();
-            break;
-        case kDeviceStateConnecting:
-            SetColor(0, 0, DEFAULT_BRIGHTNESS);
-            TurnOn();
-            break;
-        case kDeviceStateListening:
-        case kDeviceStateAudioTesting:
-            if (app.IsVoiceDetected()) {
-                SetColor(HIGH_BRIGHTNESS, 0, 0);
-            } else {
-                SetColor(LOW_BRIGHTNESS, 0, 0);
-            }
-            TurnOn();
-            break;
-        case kDeviceStateSpeaking:
-            SetColor(0, DEFAULT_BRIGHTNESS, 0);
-            TurnOn();
-            break;
-        case kDeviceStateUpgrading:
-            SetColor(0, DEFAULT_BRIGHTNESS, 0);
-            StartContinuousBlink(100);
-            break;
-        case kDeviceStateActivating:
-            SetColor(0, DEFAULT_BRIGHTNESS, 0);
-            StartContinuousBlink(500);
-            break;
-        default:
-            ESP_LOGW(TAG, "Unknown led strip event: %d", device_state);
-            return;
-    }
+    TurnOff();
 }
