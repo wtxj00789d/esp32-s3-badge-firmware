@@ -24,6 +24,21 @@ python tools\badge_media_tool\app.py bwp input.gif --output 001.BWP --fps 15 --m
 python tools\badge_media_tool\app.py wav input.mp3 --output 001.WAV
 ```
 
+Packaged executables:
+
+```powershell
+tools\badge_media_tool\dist\BadgeMediaTool.exe
+tools\badge_media_tool\dist\BadgeMediaToolCLI.exe bwp input.gif --output 001.BWP --fps 15 --max-frames 60
+tools\badge_media_tool\dist\BadgeMediaToolCLI.exe wav input.mp3 --output 001.WAV
+```
+
+Rebuild:
+
+```powershell
+python -m PyInstaller tools\badge_media_tool\BadgeMediaTool.spec --distpath tools\badge_media_tool\dist --workpath tools\badge_media_tool\pyinstaller_build
+python -m PyInstaller tools\badge_media_tool\BadgeMediaToolCLI.spec --distpath tools\badge_media_tool\dist --workpath tools\badge_media_tool\pyinstaller_build_cli
+```
+
 ## Formats
 
 - BWP: `BWP1`, 240x240, max 15fps, raw RGB565 frames.
