@@ -41,7 +41,7 @@ python -m PyInstaller tools\badge_media_tool\BadgeMediaToolCLI.spec --distpath t
 
 ## Formats
 
-- BWP: `BWP1`, 240x240, max 15fps, raw RGB565 frames.
+- BWP: `BWP1`, 240x240, max 20fps, raw RGB565 frames.
 - WAV: 16000Hz, mono, signed 16-bit PCM.
 
 The current firmware loads a BWP file into PSRAM, so the GUI defaults to 60 frames.

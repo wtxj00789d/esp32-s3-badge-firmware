@@ -14,7 +14,7 @@ import audio
 import bwp
 
 
-FPS_CHOICES = (5, 10, 12, 15)
+FPS_CHOICES = (5, 10, 12, 15, 20)
 MAX_FRAME_CHOICES = (30, 45, 60, 72)
 MEDIA_FILETYPES = [
     ("Media files", "*.gif *.png *.jpg *.jpeg *.bmp *.webp *.mp4 *.mov *.m4v *.webm *.mkv"),

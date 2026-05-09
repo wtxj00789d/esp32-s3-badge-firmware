@@ -13,6 +13,7 @@ namespace {
 constexpr const char* TAG = "BadgeBwp";
 constexpr uint16_t kExpectedWidth = 240;
 constexpr uint16_t kExpectedHeight = 240;
+constexpr uint16_t kMaxFps = 20;
 constexpr uint32_t kExpectedFrameBytes = kExpectedWidth * kExpectedHeight * 2;
 
 #pragma pack(push, 1)
@@ -114,7 +115,7 @@ bool BadgeBwp::Load(const char* path)
             goto done;
         }
 
-        if (header->fps < 1 || header->fps > 15) {
+        if (header->fps < 1 || header->fps > kMaxFps) {
             ESP_LOGW(TAG, "Unsupported BWP fps in %s: %u", path, header->fps);
             goto done;
         }
