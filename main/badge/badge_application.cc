@@ -2,6 +2,7 @@
 
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 #include <freertos/task.h>
 
 #include "badge_defaults.h"
@@ -27,17 +28,102 @@ void BadgeApplication::Initialize()
 {
     ESP_LOGI(TAG, "Initialize badge firmware");
     board_.Initialize();
-    board_.SetButtonCallback([](BadgeButtonEvent event) {
-        ESP_LOGI(TAG, "BOOT button: %s", ButtonEventName(event));
+
+    action_queue_ = xQueueCreate(8, sizeof(BadgeAction));
+    if (action_queue_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to create badge action queue");
+        state_ = BadgeState::ErrorNotice;
+        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::ErrorPage());
+        return;
+    }
+
+    board_.SetButtonCallback([this](BadgeButtonEvent event) {
+        HandleButton(event);
     });
 
     board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+    state_ = BadgeState::PlayingWallpaper;
 }
 
 void BadgeApplication::Run()
 {
     ESP_LOGI(TAG, "Run badge firmware");
     while (true) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        if (action_queue_ == nullptr) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
+        }
+
+        BadgeAction action;
+        if (xQueueReceive(action_queue_, &action, pdMS_TO_TICKS(50)) == pdTRUE) {
+            HandleAction(action);
+        }
+    }
+}
+
+void BadgeApplication::HandleButton(BadgeButtonEvent event)
+{
+    ESP_LOGI(TAG, "BOOT button: %s", ButtonEventName(event));
+
+    BadgeAction action;
+    bool should_queue = true;
+
+    if (state_ == BadgeState::Recording) {
+        switch (event) {
+        case BadgeButtonEvent::SingleClick:
+            action = BadgeAction::StopRecording;
+            break;
+        case BadgeButtonEvent::DoubleClick:
+        case BadgeButtonEvent::LongPress:
+            should_queue = false;
+            break;
+        }
+    } else {
+        switch (event) {
+        case BadgeButtonEvent::SingleClick:
+            action = BadgeAction::PlaySound;
+            break;
+        case BadgeButtonEvent::DoubleClick:
+            action = BadgeAction::NextWallpaper;
+            break;
+        case BadgeButtonEvent::LongPress:
+            action = BadgeAction::StartRecording;
+            break;
+        }
+    }
+
+    if (!should_queue) {
+        return;
+    }
+
+    if (action_queue_ == nullptr) {
+        ESP_LOGW(TAG, "Badge action queue is not available");
+        return;
+    }
+
+    if (xQueueSend(action_queue_, &action, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "Badge action queue is full");
+    }
+}
+
+void BadgeApplication::HandleAction(BadgeAction action)
+{
+    switch (action) {
+    case BadgeAction::PlaySound:
+        ESP_LOGI(TAG, "Action: play sound");
+        break;
+    case BadgeAction::NextWallpaper:
+        ESP_LOGI(TAG, "Action: next wallpaper");
+        break;
+    case BadgeAction::StartRecording:
+        ESP_LOGI(TAG, "Action: start recording");
+        state_ = BadgeState::Recording;
+        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::RecordingPage());
+        break;
+    case BadgeAction::StopRecording:
+        ESP_LOGI(TAG, "Action: stop recording");
+        state_ = BadgeState::PlayingWallpaper;
+        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+        break;
     }
 }
