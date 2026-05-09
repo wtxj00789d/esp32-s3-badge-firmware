@@ -6,7 +6,11 @@
 #define TAG "Settings"
 
 Settings::Settings(const std::string& ns, bool read_write) : ns_(ns), read_write_(read_write) {
-    nvs_open(ns.c_str(), read_write_ ? NVS_READWRITE : NVS_READONLY, &nvs_handle_);
+    esp_err_t ret = nvs_open(ns.c_str(), read_write_ ? NVS_READWRITE : NVS_READONLY, &nvs_handle_);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to open namespace %s: %s", ns.c_str(), esp_err_to_name(ret));
+        nvs_handle_ = 0;
+    }
 }
 
 Settings::~Settings() {
@@ -38,7 +42,7 @@ std::string Settings::GetString(const std::string& key, const std::string& defau
 }
 
 void Settings::SetString(const std::string& key, const std::string& value) {
-    if (read_write_) {
+    if (read_write_ && nvs_handle_ != 0) {
         ESP_ERROR_CHECK(nvs_set_str(nvs_handle_, key.c_str(), value.c_str()));
         dirty_ = true;
     } else {
@@ -59,7 +63,7 @@ int32_t Settings::GetInt(const std::string& key, int32_t default_value) {
 }
 
 void Settings::SetInt(const std::string& key, int32_t value) {
-    if (read_write_) {
+    if (read_write_ && nvs_handle_ != 0) {
         ESP_ERROR_CHECK(nvs_set_i32(nvs_handle_, key.c_str(), value));
         dirty_ = true;
     } else {
@@ -80,7 +84,7 @@ bool Settings::GetBool(const std::string& key, bool default_value) {
 }
 
 void Settings::SetBool(const std::string& key, bool value) {
-    if (read_write_) {
+    if (read_write_ && nvs_handle_ != 0) {
         ESP_ERROR_CHECK(nvs_set_u8(nvs_handle_, key.c_str(), value ? 1 : 0));
         dirty_ = true;
     } else {
@@ -89,7 +93,7 @@ void Settings::SetBool(const std::string& key, bool value) {
 }
 
 void Settings::EraseKey(const std::string& key) {
-    if (read_write_) {
+    if (read_write_ && nvs_handle_ != 0) {
         auto ret = nvs_erase_key(nvs_handle_, key.c_str());
         if (ret != ESP_ERR_NVS_NOT_FOUND) {
             ESP_ERROR_CHECK(ret);
@@ -100,7 +104,7 @@ void Settings::EraseKey(const std::string& key) {
 }
 
 void Settings::EraseAll() {
-    if (read_write_) {
+    if (read_write_ && nvs_handle_ != 0) {
         ESP_ERROR_CHECK(nvs_erase_all(nvs_handle_));
     } else {
         ESP_LOGW(TAG, "Namespace %s is not open for writing", ns_.c_str());

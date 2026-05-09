@@ -14,9 +14,13 @@ constexpr const char* kRecordingNextKey = "rec_next";
 bool BadgeSettings::Open()
 {
     Settings settings(kNamespace, true);
-    opened_ = true;
-    ESP_LOGI(TAG, "Opened badge settings namespace");
-    return true;
+    opened_ = settings.IsOpen();
+    if (opened_) {
+        ESP_LOGI(TAG, "Opened badge settings namespace");
+    } else {
+        ESP_LOGW(TAG, "Badge settings namespace is unavailable");
+    }
+    return opened_;
 }
 
 std::string BadgeSettings::CurrentBasename() const
