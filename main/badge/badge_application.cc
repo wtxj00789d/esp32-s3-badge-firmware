@@ -10,6 +10,7 @@
 
 namespace {
 constexpr const char* TAG = "BadgeApplication";
+constexpr int64_t kIdleQueueWaitUs = 50 * 1000;
 
 const char* ButtonEventName(BadgeButtonEvent event)
 {
@@ -56,10 +57,22 @@ void BadgeApplication::Initialize()
     } else {
         ESP_LOGI(TAG, "Badge media ready: %u item(s)", static_cast<unsigned>(storage_.Media().size()));
         SelectInitialWallpaper();
-        if (LoadCurrentWallpaper()) {
-            state_ = BadgeState::PlayingWallpaper;
-            DrawWallpaperFrame();
-        } else {
+        const auto& media = storage_.Media();
+        const size_t start_index = current_media_index_;
+        bool loaded = false;
+        for (size_t offset = 0; offset < media.size(); ++offset) {
+            current_media_index_ = (start_index + offset) % media.size();
+            if (LoadCurrentWallpaper()) {
+                settings_.SetCurrentBasename(media[current_media_index_].basename);
+                state_ = BadgeState::PlayingWallpaper;
+                DrawWallpaperFrame();
+                loaded = true;
+                break;
+            }
+        }
+
+        if (!loaded) {
+            current_bwp_.Close();
             state_ = BadgeState::NoSdFallback;
             board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
         }
@@ -75,8 +88,21 @@ void BadgeApplication::Run()
             continue;
         }
 
+        int64_t wait_us = kIdleQueueWaitUs;
+        if (state_ == BadgeState::PlayingWallpaper && current_bwp_.loaded()) {
+            const int64_t now_us = esp_timer_get_time();
+            if (now_us >= next_frame_time_us_) {
+                wait_us = 0;
+            } else {
+                wait_us = next_frame_time_us_ - now_us;
+                if (wait_us > kIdleQueueWaitUs) {
+                    wait_us = kIdleQueueWaitUs;
+                }
+            }
+        }
+
         BadgeAction action;
-        if (xQueueReceive(action_queue_, &action, pdMS_TO_TICKS(50)) == pdTRUE) {
+        if (xQueueReceive(action_queue_, &action, pdMS_TO_TICKS((wait_us + 999) / 1000)) == pdTRUE) {
             HandleAction(action);
         }
 
