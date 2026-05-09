@@ -1,6 +1,7 @@
 #include "badge_application.h"
 
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
@@ -44,16 +45,24 @@ void BadgeApplication::Initialize()
     settings_.Open();
     bool sd_ok = storage_.Mount();
 
-    board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
     if (!sd_ok) {
         ESP_LOGW(TAG, "SD storage unavailable; using fallback page");
         state_ = BadgeState::NoSdFallback;
+        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
     } else if (storage_.Media().empty()) {
         ESP_LOGW(TAG, "No badge media found on SD; using fallback page");
         state_ = BadgeState::NoSdFallback;
+        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
     } else {
         ESP_LOGI(TAG, "Badge media ready: %u item(s)", static_cast<unsigned>(storage_.Media().size()));
-        state_ = BadgeState::PlayingWallpaper;
+        SelectInitialWallpaper();
+        if (LoadCurrentWallpaper()) {
+            state_ = BadgeState::PlayingWallpaper;
+            DrawWallpaperFrame();
+        } else {
+            state_ = BadgeState::NoSdFallback;
+            board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+        }
     }
 }
 
@@ -69,6 +78,13 @@ void BadgeApplication::Run()
         BadgeAction action;
         if (xQueueReceive(action_queue_, &action, pdMS_TO_TICKS(50)) == pdTRUE) {
             HandleAction(action);
+        }
+
+        if (state_ == BadgeState::PlayingWallpaper && current_bwp_.loaded()) {
+            const int64_t now_us = esp_timer_get_time();
+            if (now_us >= next_frame_time_us_) {
+                DrawWallpaperFrame();
+            }
         }
     }
 }
@@ -126,6 +142,7 @@ void BadgeApplication::HandleAction(BadgeAction action)
         break;
     case BadgeAction::NextWallpaper:
         ESP_LOGI(TAG, "Action: next wallpaper");
+        AdvanceWallpaper();
         break;
     case BadgeAction::StartRecording:
         ESP_LOGI(TAG, "Action: start recording");
@@ -134,10 +151,97 @@ void BadgeApplication::HandleAction(BadgeAction action)
         break;
     case BadgeAction::StopRecording:
         ESP_LOGI(TAG, "Action: stop recording");
-        state_ = storage_.mounted() && !storage_.Media().empty()
-            ? BadgeState::PlayingWallpaper
-            : BadgeState::NoSdFallback;
-        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+        if (current_bwp_.loaded()) {
+            state_ = BadgeState::PlayingWallpaper;
+            DrawWallpaperFrame();
+        } else {
+            state_ = BadgeState::NoSdFallback;
+            board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+        }
         break;
     }
+}
+
+bool BadgeApplication::LoadCurrentWallpaper()
+{
+    const auto& media = storage_.Media();
+    if (!storage_.mounted() || media.empty() || current_media_index_ >= media.size()) {
+        current_bwp_.Close();
+        return false;
+    }
+
+    if (!current_bwp_.Load(media[current_media_index_].bwp_path.c_str())) {
+        current_frame_index_ = 0;
+        next_frame_time_us_ = 0;
+        return false;
+    }
+
+    current_frame_index_ = 0;
+    next_frame_time_us_ = esp_timer_get_time();
+    return true;
+}
+
+void BadgeApplication::DrawWallpaperFrame()
+{
+    if (!current_bwp_.loaded()) {
+        return;
+    }
+
+    const uint16_t* frame = current_bwp_.Frame(current_frame_index_);
+    if (frame == nullptr) {
+        current_frame_index_ = 0;
+        frame = current_bwp_.Frame(current_frame_index_);
+    }
+
+    if (frame == nullptr) {
+        return;
+    }
+
+    board_.DrawRgb565(0, 0, current_bwp_.width(), current_bwp_.height(), frame);
+    current_frame_index_ = (current_frame_index_ + 1) % current_bwp_.frame_count();
+    next_frame_time_us_ = esp_timer_get_time() + 1000000LL / current_bwp_.fps();
+}
+
+void BadgeApplication::SelectInitialWallpaper()
+{
+    current_media_index_ = 0;
+
+    const std::string current_basename = settings_.CurrentBasename();
+    if (current_basename.empty()) {
+        return;
+    }
+
+    const auto& media = storage_.Media();
+    for (size_t i = 0; i < media.size(); ++i) {
+        if (media[i].basename == current_basename) {
+            current_media_index_ = i;
+            return;
+        }
+    }
+}
+
+void BadgeApplication::AdvanceWallpaper()
+{
+    const auto& media = storage_.Media();
+    if (!storage_.mounted() || media.empty()) {
+        current_bwp_.Close();
+        state_ = BadgeState::NoSdFallback;
+        board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
+        return;
+    }
+
+    const size_t start_index = current_media_index_;
+    for (size_t offset = 1; offset <= media.size(); ++offset) {
+        current_media_index_ = (start_index + offset) % media.size();
+        if (LoadCurrentWallpaper()) {
+            settings_.SetCurrentBasename(media[current_media_index_].basename);
+            state_ = BadgeState::PlayingWallpaper;
+            DrawWallpaperFrame();
+            return;
+        }
+    }
+
+    current_bwp_.Close();
+    state_ = BadgeState::NoSdFallback;
+    board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
 }

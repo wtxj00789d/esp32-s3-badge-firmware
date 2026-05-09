@@ -4,6 +4,7 @@
 #include <freertos/queue.h>
 
 #include "badge_board.h"
+#include "badge_bwp.h"
 #include "badge_settings.h"
 #include "badge_storage.h"
 
@@ -32,9 +33,17 @@ private:
     BadgeBoard board_;
     BadgeStorage storage_;
     BadgeSettings settings_;
+    BadgeBwp current_bwp_;
+    size_t current_media_index_ = 0;
+    int current_frame_index_ = 0;
+    int64_t next_frame_time_us_ = 0;
     BadgeState state_ = BadgeState::Booting;
     QueueHandle_t action_queue_ = nullptr;
 
     void HandleButton(BadgeButtonEvent event);
     void HandleAction(BadgeAction action);
+    bool LoadCurrentWallpaper();
+    void DrawWallpaperFrame();
+    void SelectInitialWallpaper();
+    void AdvanceWallpaper();
 };
