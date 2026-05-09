@@ -41,8 +41,20 @@ void BadgeApplication::Initialize()
         HandleButton(event);
     });
 
+    settings_.Open();
+    bool sd_ok = storage_.Mount();
+
     board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
-    state_ = BadgeState::PlayingWallpaper;
+    if (!sd_ok) {
+        ESP_LOGW(TAG, "SD storage unavailable; using fallback page");
+        state_ = BadgeState::NoSdFallback;
+    } else if (storage_.Media().empty()) {
+        ESP_LOGW(TAG, "No badge media found on SD; using fallback page");
+        state_ = BadgeState::NoSdFallback;
+    } else {
+        ESP_LOGI(TAG, "Badge media ready: %u item(s)", static_cast<unsigned>(storage_.Media().size()));
+        state_ = BadgeState::PlayingWallpaper;
+    }
 }
 
 void BadgeApplication::Run()
@@ -122,7 +134,9 @@ void BadgeApplication::HandleAction(BadgeAction action)
         break;
     case BadgeAction::StopRecording:
         ESP_LOGI(TAG, "Action: stop recording");
-        state_ = BadgeState::PlayingWallpaper;
+        state_ = storage_.mounted() && !storage_.Media().empty()
+            ? BadgeState::PlayingWallpaper
+            : BadgeState::NoSdFallback;
         board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::DefaultPage());
         break;
     }

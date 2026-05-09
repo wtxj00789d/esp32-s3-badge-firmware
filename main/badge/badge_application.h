@@ -4,6 +4,8 @@
 #include <freertos/queue.h>
 
 #include "badge_board.h"
+#include "badge_settings.h"
+#include "badge_storage.h"
 
 enum class BadgeState {
     Booting,
@@ -28,6 +30,8 @@ public:
 
 private:
     BadgeBoard board_;
+    BadgeStorage storage_;
+    BadgeSettings settings_;
     BadgeState state_ = BadgeState::Booting;
     QueueHandle_t action_queue_ = nullptr;
 
