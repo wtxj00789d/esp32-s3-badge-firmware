@@ -1,10 +1,12 @@
 #include "badge_board.h"
 
 #include <algorithm>
+#include <cstddef>
 
 #include <esp_check.h>
 #include <esp_codec_dev_defaults.h>
 #include <esp_err.h>
+#include <esp_heap_caps.h>
 #include <esp_lcd_gc9a01.h>
 #include <esp_log.h>
 #include <driver/gpio.h>
@@ -49,10 +51,21 @@ constexpr ledc_mode_t kBacklightLedcMode = LEDC_LOW_SPEED_MODE;
 constexpr ledc_timer_t kBacklightLedcTimer = LEDC_TIMER_1;
 constexpr ledc_channel_t kBacklightLedcChannel = LEDC_CHANNEL_1;
 constexpr uint32_t kBacklightMaxDuty = 1023;
+
+uint16_t SwapRgb565Bytes(uint16_t value)
+{
+    return static_cast<uint16_t>((value << 8) | (value >> 8));
+}
 }
 
 BadgeBoard::~BadgeBoard()
 {
+    if (lcd_swap_buffer_ != nullptr) {
+        heap_caps_free(lcd_swap_buffer_);
+        lcd_swap_buffer_ = nullptr;
+        lcd_swap_pixels_ = 0;
+    }
+
     delete boot_button_;
     boot_button_ = nullptr;
 
@@ -102,7 +115,16 @@ void BadgeBoard::DrawRgb565(int x, int y, int width, int height, const uint16_t*
         return;
     }
 
-    ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(panel_, x, y, x + width, y + height, pixels));
+    const size_t pixel_count = static_cast<size_t>(width) * static_cast<size_t>(height);
+    if (!EnsureLcdSwapBuffer(pixel_count)) {
+        return;
+    }
+
+    for (size_t i = 0; i < pixel_count; ++i) {
+        lcd_swap_buffer_[i] = SwapRgb565Bytes(pixels[i]);
+    }
+
+    ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(panel_, x, y, x + width, y + height, lcd_swap_buffer_));
 }
 
 void BadgeBoard::SetBacklightPercent(uint8_t percent)
@@ -163,7 +185,7 @@ void BadgeBoard::InitializeDisplayPanel()
 
     esp_lcd_panel_dev_config_t panel_config = {};
     panel_config.reset_gpio_num = kLcdReset;
-    panel_config.rgb_endian = LCD_RGB_ENDIAN_BGR;
+    panel_config.rgb_endian = LCD_RGB_ENDIAN_RGB;
     panel_config.bits_per_pixel = 16;
     ESP_ERROR_CHECK(esp_lcd_new_panel_gc9a01(panel_io_, &panel_config, &panel_));
 
@@ -179,7 +201,7 @@ void BadgeBoard::InitializeDisplayPanel()
     const uint8_t data_0x63[] = {0x18, 0x11, 0x71, 0xF1, 0x70, 0x70, 0x18, 0x13, 0x71, 0xF3, 0x70, 0x70};
     ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(panel_io_, 0x63, data_0x63, sizeof(data_0x63)));
 
-    const uint8_t data_0x36[] = {0x48};
+    const uint8_t data_0x36[] = {0x40};
     ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(panel_io_, 0x36, data_0x36, sizeof(data_0x36)));
 
     const uint8_t data_0xC3[] = {0x1F};
@@ -255,4 +277,31 @@ void BadgeBoard::EmitButtonEvent(BadgeButtonEvent event)
     if (button_callback_) {
         button_callback_(event);
     }
+}
+
+bool BadgeBoard::EnsureLcdSwapBuffer(size_t pixel_count)
+{
+    if (lcd_swap_pixels_ >= pixel_count && lcd_swap_buffer_ != nullptr) {
+        return true;
+    }
+
+    if (lcd_swap_buffer_ != nullptr) {
+        heap_caps_free(lcd_swap_buffer_);
+        lcd_swap_buffer_ = nullptr;
+        lcd_swap_pixels_ = 0;
+    }
+
+    const size_t bytes = pixel_count * sizeof(uint16_t);
+    lcd_swap_buffer_ = static_cast<uint16_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (lcd_swap_buffer_ == nullptr) {
+        ESP_LOGW(TAG, "PSRAM allocation failed for LCD swap buffer (%u bytes); trying internal heap", static_cast<unsigned>(bytes));
+        lcd_swap_buffer_ = static_cast<uint16_t*>(heap_caps_malloc(bytes, MALLOC_CAP_8BIT));
+    }
+    if (lcd_swap_buffer_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to allocate LCD swap buffer (%u bytes)", static_cast<unsigned>(bytes));
+        return false;
+    }
+
+    lcd_swap_pixels_ = pixel_count;
+    return true;
 }
