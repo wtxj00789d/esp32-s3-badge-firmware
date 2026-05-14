@@ -185,7 +185,7 @@ void BadgeBoard::InitializeDisplayPanel()
 
     esp_lcd_panel_dev_config_t panel_config = {};
     panel_config.reset_gpio_num = kLcdReset;
-    panel_config.rgb_endian = LCD_RGB_ENDIAN_RGB;
+    panel_config.rgb_endian = LCD_RGB_ENDIAN_BGR;
     panel_config.bits_per_pixel = 16;
     ESP_ERROR_CHECK(esp_lcd_new_panel_gc9a01(panel_io_, &panel_config, &panel_));
 
@@ -201,7 +201,7 @@ void BadgeBoard::InitializeDisplayPanel()
     const uint8_t data_0x63[] = {0x18, 0x11, 0x71, 0xF1, 0x70, 0x70, 0x18, 0x13, 0x71, 0xF3, 0x70, 0x70};
     ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(panel_io_, 0x63, data_0x63, sizeof(data_0x63)));
 
-    const uint8_t data_0x36[] = {0x40};
+    const uint8_t data_0x36[] = {0x48};
     ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(panel_io_, 0x36, data_0x36, sizeof(data_0x36)));
 
     const uint8_t data_0xC3[] = {0x1F};
