@@ -45,7 +45,7 @@ constexpr int kAudioSampleRate = 16000;
 
 constexpr gpio_num_t kBootButton = GPIO_NUM_0;
 constexpr uint16_t kBootLongPressMs = 2000;
-constexpr uint16_t kBootShortPressMs = 50;
+constexpr uint16_t kBootShortPressMs = 250;
 
 constexpr ledc_mode_t kBacklightLedcMode = LEDC_LOW_SPEED_MODE;
 constexpr ledc_timer_t kBacklightLedcTimer = LEDC_TIMER_1;
