@@ -247,9 +247,11 @@ void BadgeApplication::DrawWallpaperFrame()
         return;
     }
 
+    const int64_t scheduled_frame_time_us = next_frame_time_us_;
+    const int64_t frame_period_us = 1000000LL / current_bwp_.fps();
     board_.DrawRgb565(0, 0, current_bwp_.width(), current_bwp_.height(), frame);
     current_frame_index_ = (current_frame_index_ + 1) % current_bwp_.frame_count();
-    next_frame_time_us_ = esp_timer_get_time() + 1000000LL / current_bwp_.fps();
+    next_frame_time_us_ = scheduled_frame_time_us + frame_period_us;
 }
 
 void BadgeApplication::SelectInitialWallpaper()
@@ -393,9 +395,11 @@ void BadgeApplication::DrawEmbeddedWallpaperFrame()
         return;
     }
 
+    const int64_t scheduled_frame_time_us = embedded_next_frame_time_us_;
+    const int64_t frame_period_us = 1000000LL / badge_default_assets::kFps;
     board_.DrawRgb565(0, 0, badge_default_assets::kWidth, badge_default_assets::kHeight, embedded_frame_buffer_);
     embedded_frame_index_ = (embedded_frame_index_ + 1) % badge_default_assets::kFrameCount;
-    embedded_next_frame_time_us_ = esp_timer_get_time() + 1000000LL / badge_default_assets::kFps;
+    embedded_next_frame_time_us_ = scheduled_frame_time_us + frame_period_us;
 }
 
 void BadgeApplication::StartRecording()
