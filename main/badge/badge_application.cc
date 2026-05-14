@@ -33,6 +33,7 @@ void BadgeApplication::Initialize()
 {
     ESP_LOGI(TAG, "Initialize badge firmware");
     board_.Initialize();
+    board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::LoadingPage());
     ignore_button_until_us_ = esp_timer_get_time() + kStartupButtonIgnoreUs;
     sound_player_ = std::make_unique<BadgeSoundPlayer>(board_.Audio());
     recorder_ = std::make_unique<BadgeRecorder>(board_.Audio());
