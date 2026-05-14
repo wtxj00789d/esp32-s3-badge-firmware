@@ -48,6 +48,7 @@ private:
     int current_frame_index_ = 0;
     int64_t next_frame_time_us_ = 0;
     int64_t ignore_button_until_us_ = 0;
+    bool use_embedded_wallpaper_ = false;
     BadgeState state_ = BadgeState::Booting;
     QueueHandle_t action_queue_ = nullptr;
 

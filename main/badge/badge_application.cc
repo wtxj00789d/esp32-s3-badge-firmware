@@ -14,6 +14,7 @@ namespace {
 constexpr const char* TAG = "BadgeApplication";
 constexpr int64_t kIdleQueueWaitUs = 50 * 1000;
 constexpr int64_t kStartupButtonIgnoreUs = 3 * 1000 * 1000;
+constexpr const char* kEmbeddedWallpaperSettingsValue = "__default__";
 
 const char* ButtonEventName(BadgeButtonEvent event)
 {
@@ -62,6 +63,11 @@ void BadgeApplication::Initialize()
     } else {
         ESP_LOGI(TAG, "Badge media ready: %u item(s)", static_cast<unsigned>(storage_.Media().size()));
         SelectInitialWallpaper();
+        if (use_embedded_wallpaper_) {
+            StartEmbeddedWallpaper();
+            return;
+        }
+
         const auto& media = storage_.Media();
         const size_t start_index = current_media_index_;
         bool loaded = false;
@@ -249,9 +255,15 @@ void BadgeApplication::DrawWallpaperFrame()
 void BadgeApplication::SelectInitialWallpaper()
 {
     current_media_index_ = 0;
+    use_embedded_wallpaper_ = false;
 
     const std::string current_basename = settings_.CurrentBasename();
     if (current_basename.empty()) {
+        return;
+    }
+
+    if (current_basename == kEmbeddedWallpaperSettingsValue) {
+        use_embedded_wallpaper_ = true;
         return;
     }
 
@@ -273,6 +285,23 @@ void BadgeApplication::AdvanceWallpaper()
         return;
     }
 
+    if (state_ == BadgeState::PlayingEmbeddedWallpaper) {
+        current_media_index_ = 0;
+        if (LoadCurrentWallpaper()) {
+            settings_.SetCurrentBasename(media[current_media_index_].basename);
+            state_ = BadgeState::PlayingWallpaper;
+            DrawWallpaperFrame();
+            return;
+        }
+    }
+
+    if (state_ == BadgeState::PlayingWallpaper && current_media_index_ + 1 >= media.size()) {
+        current_bwp_.Close();
+        settings_.SetCurrentBasename(kEmbeddedWallpaperSettingsValue);
+        StartEmbeddedWallpaper();
+        return;
+    }
+
     const size_t start_index = current_media_index_;
     for (size_t offset = 1; offset <= media.size(); ++offset) {
         current_media_index_ = (start_index + offset) % media.size();
@@ -290,6 +319,11 @@ void BadgeApplication::AdvanceWallpaper()
 
 void BadgeApplication::PlayCurrentSound()
 {
+    if (state_ == BadgeState::PlayingEmbeddedWallpaper) {
+        PlayDefaultSound();
+        return;
+    }
+
     const auto& media = storage_.Media();
     if (!storage_.mounted() || media.empty() || current_media_index_ >= media.size()) {
         ESP_LOGW(TAG, "No SD media sound available");
