@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import threading
 import sys
+import tempfile
+import winsound
 from pathlib import Path
 from shutil import which
 from tkinter import BOTH, DISABLED, DoubleVar, END, LEFT, NORMAL, RIGHT, X, Canvas, IntVar, StringVar, Tk, filedialog, messagebox
@@ -19,6 +21,7 @@ MAX_FRAME_CHOICES = (30, 45, 60, 72)
 MEDIA_FILETYPES = [
     ("Media files", "*.gif *.png *.jpg *.jpeg *.bmp *.webp *.mp4 *.mov *.m4v *.webm *.mkv"),
     ("GIF files", "*.gif"),
+    ("WEBP files", "*.webp"),
     ("Image files", "*.png *.jpg *.jpeg *.bmp *.webp"),
     ("Video files", "*.mp4 *.mov *.m4v *.webm *.mkv"),
     ("All files", "*.*"),
@@ -85,9 +88,13 @@ class BadgeMediaTool:
         self.audio_start_var = DoubleVar(value=0.0)
         self.audio_end_var = DoubleVar(value=0.0)
         self.audio_range_var = StringVar(value="Range: 0.00s - 0.00s")
+        self.audio_preview_path: Path | None = None
+        self.audio_preview_busy = False
+        self.audio_preview_generation = 0
 
         self.busy = False
         self._build_ui()
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.update_duration_label()
 
     def _build_ui(self) -> None:
@@ -172,6 +179,10 @@ class BadgeMediaTool:
         ttk.Label(controls, text="Output format: 16000 Hz, mono, signed 16-bit PCM WAV").pack(side=LEFT)
         self.convert_audio_button = ttk.Button(controls, text="Convert WAV", command=self.start_audio_conversion)
         self.convert_audio_button.pack(side=RIGHT)
+        self.stop_audio_button = ttk.Button(controls, text="Stop", command=self.stop_audio_preview)
+        self.stop_audio_button.pack(side=RIGHT, padx=(0, 8))
+        self.preview_audio_button = ttk.Button(controls, text="Preview", command=self.start_audio_preview)
+        self.preview_audio_button.pack(side=RIGHT, padx=(0, 8))
 
         range_frame = ttk.Frame(self.audio_tab, padding=(10, 0, 10, 8))
         range_frame.pack(fill=X)
@@ -211,7 +222,13 @@ class BadgeMediaTool:
         self.busy = busy
         state = DISABLED if busy else NORMAL
         combo_state = DISABLED if busy else "readonly"
-        for widget in (self.choose_media_button, self.convert_wallpaper_button, self.choose_audio_button, self.convert_audio_button):
+        for widget in (
+            self.choose_media_button,
+            self.convert_wallpaper_button,
+            self.choose_audio_button,
+            self.convert_audio_button,
+            self.preview_audio_button,
+        ):
             widget.configure(state=state)
         for widget in (self.fps_combo, self.max_frames_combo):
             widget.configure(state=combo_state)
@@ -304,6 +321,7 @@ class BadgeMediaTool:
             return
         path = filedialog.askopenfilename(filetypes=AUDIO_FILETYPES)
         if path:
+            self.stop_audio_preview(log=False)
             try:
                 duration = audio.audio_duration_seconds(path)
             except Exception as exc:
@@ -586,6 +604,80 @@ class BadgeMediaTool:
         self.set_busy(False)
         self.log_audio(f"Wrote {output} ({size} bytes), 16000Hz mono s16 PCM, range={start_seconds:.2f}-{end_seconds:.2f}s")
         messagebox.showinfo("Audio conversion complete", f"Saved:\n{output}")
+
+    def start_audio_preview(self) -> None:
+        if self.busy or self.audio_preview_busy:
+            return
+        input_path = self.audio_file_var.get()
+        if input_path == "No audio selected":
+            messagebox.showwarning("No audio", "Choose audio first.")
+            return
+        start_seconds = self.audio_start_var.get()
+        end_seconds = self.audio_end_var.get()
+        self.audio_preview_generation += 1
+        generation = self.audio_preview_generation
+        self.audio_preview_busy = True
+        self.preview_audio_button.configure(state=DISABLED)
+        self.stop_audio_preview(log=False, cancel_pending=False)
+        self.log_audio("Preparing audio preview")
+        threading.Thread(target=self._run_audio_preview, args=(generation, input_path, start_seconds, end_seconds), daemon=True).start()
+
+    def _run_audio_preview(self, generation: int, input_path: str, start_seconds: float, end_seconds: float) -> None:
+        preview_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(prefix="badge_media_tool_preview_", suffix=".wav", delete=False) as temp_file:
+                preview_path = Path(temp_file.name)
+            audio.convert_audio_to_badge_wav(input_path, str(preview_path), start_seconds=start_seconds, end_seconds=end_seconds)
+        except Exception as exc:
+            if preview_path is not None:
+                preview_path.unlink(missing_ok=True)
+            self.root.after(0, self._audio_preview_failed, generation, str(exc))
+            return
+        self.root.after(0, self._audio_preview_ready, generation, preview_path, start_seconds, end_seconds)
+
+    def _audio_preview_ready(self, generation: int, preview_path: Path, start_seconds: float, end_seconds: float) -> None:
+        if generation != self.audio_preview_generation:
+            preview_path.unlink(missing_ok=True)
+            return
+        self.audio_preview_busy = False
+        if not self.busy:
+            self.preview_audio_button.configure(state=NORMAL)
+        self.stop_audio_preview(log=False, cancel_pending=False)
+        self.audio_preview_path = preview_path
+        winsound.PlaySound(str(preview_path), winsound.SND_FILENAME | winsound.SND_ASYNC)
+        self.log_audio(f"Previewing 16000Hz mono s16 PCM, range={start_seconds:.2f}-{end_seconds:.2f}s")
+
+    def _audio_preview_failed(self, generation: int, error: str) -> None:
+        if generation != self.audio_preview_generation:
+            return
+        self.audio_preview_busy = False
+        if not self.busy:
+            self.preview_audio_button.configure(state=NORMAL)
+        messagebox.showerror("Audio preview error", error)
+        self.log_audio(f"Preview failed: {error}")
+
+    def stop_audio_preview(self, log: bool = True, cancel_pending: bool = True) -> None:
+        if cancel_pending:
+            self.audio_preview_generation += 1
+            self.audio_preview_busy = False
+            if not self.busy:
+                self.preview_audio_button.configure(state=NORMAL)
+        winsound.PlaySound(None, 0)
+        if self.audio_preview_path is not None:
+            try:
+                self.audio_preview_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            self.audio_preview_path = None
+        if log:
+            self.log_audio("Preview stopped")
+
+    def on_close(self) -> None:
+        if self.preview_job is not None:
+            self.root.after_cancel(self.preview_job)
+            self.preview_job = None
+        self.stop_audio_preview(log=False)
+        self.root.destroy()
 
 
 def main(argv=None):

@@ -18,7 +18,8 @@ DEFAULT_MAX_FRAMES = 60
 MAGIC = b"BWP1"
 HEADER_STRUCT = struct.Struct("<4sHHHHI")
 VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm", ".mkv"}
-IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+ANIMATED_IMAGE_SUFFIXES = {".gif", ".webp"}
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
 ProgressCallback = Callable[[int, int, str], None]
 
 
@@ -43,14 +44,14 @@ def rgb565_bytes(image: Image.Image) -> bytes:
     return bytes(out)
 
 
-def iter_gif_frames(path: str) -> list[tuple[Image.Image, int]]:
+def iter_image_sequence_frames(path: str) -> list[tuple[Image.Image, int]]:
     frames = []
     with Image.open(path) as image:
         for frame in ImageSequence.Iterator(image):
             duration = int(frame.info.get("duration", image.info.get("duration", 100)) or 100)
             frames.append((frame.convert("RGBA").copy(), max(duration, 20)))
     if not frames:
-        raise ValueError("GIF contains no frames")
+        raise ValueError("image sequence contains no frames")
     return frames
 
 
@@ -118,8 +119,8 @@ def load_media_frames(
     output_size: tuple[int, int] | None = None,
 ) -> list[tuple[Image.Image, int]]:
     suffix = Path(path).suffix.lower()
-    if suffix == ".gif":
-        return iter_gif_frames(path)
+    if suffix in ANIMATED_IMAGE_SUFFIXES:
+        return iter_image_sequence_frames(path)
     if suffix in IMAGE_SUFFIXES:
         return iter_static_image(path)
     if suffix in VIDEO_SUFFIXES:

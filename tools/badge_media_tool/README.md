@@ -41,7 +41,7 @@ python -m PyInstaller tools\badge_media_tool\BadgeMediaToolCLI.spec --distpath t
 
 ## Formats
 
-- BWP: `BWP1`, 240x240, max 20fps, raw RGB565 frames.
+- BWP: `BWP1`, 240x240, max 20fps, raw RGB565 frames. GIF and animated WebP are converted as frame sequences.
 - WAV: 16000Hz, mono, signed 16-bit PCM.
 
-The GUI can select a start/end range before export. The current firmware loads a BWP file into PSRAM, so the GUI defaults to 60 frames.
+The GUI can select a start/end range before export. The audio tab can preview the selected range in the same 16000Hz mono s16 PCM WAV format used by the firmware. The current firmware loads a BWP file into PSRAM, so the GUI defaults to 60 frames.
