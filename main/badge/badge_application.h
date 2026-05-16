@@ -44,6 +44,8 @@ private:
     uint16_t* embedded_frame_buffer_ = nullptr;
     int embedded_frame_index_ = 0;
     int64_t embedded_next_frame_time_us_ = 0;
+    int recording_animation_frame_ = 0;
+    int64_t recording_next_frame_time_us_ = 0;
     size_t current_media_index_ = 0;
     int current_frame_index_ = 0;
     int64_t next_frame_time_us_ = 0;
@@ -62,6 +64,7 @@ private:
     void PlayDefaultSound();
     void StartEmbeddedWallpaper();
     void DrawEmbeddedWallpaperFrame();
+    void DrawRecordingFrame();
     void StartRecording();
     void StopRecording();
     void ResumeDisplayAfterRecording();

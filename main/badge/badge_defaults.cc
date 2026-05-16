@@ -1,10 +1,15 @@
 #include "badge_defaults.h"
 
+#include <cstring>
+
 #include <esp_heap_caps.h>
 #include <esp_log.h>
 
 namespace {
 constexpr const char* TAG = "BadgeDefaults";
+constexpr int kGlyphWidth = 5;
+constexpr int kGlyphHeight = 7;
+constexpr int kGlyphSpacing = 1;
 
 void FillPage(uint16_t* page, uint16_t bg, uint16_t ring, uint16_t center)
 {
@@ -56,6 +61,38 @@ const uint16_t* GetPage(uint16_t bg, uint16_t ring, uint16_t center)
 const char* GlyphRows(char ch)
 {
     switch (ch) {
+    case '(':
+        return "00110"
+               "01000"
+               "10000"
+               "10000"
+               "10000"
+               "01000"
+               "00110";
+    case ')':
+        return "01100"
+               "00010"
+               "00001"
+               "00001"
+               "00001"
+               "00010"
+               "01100";
+    case 'C':
+        return "01111"
+               "10000"
+               "10000"
+               "10000"
+               "10000"
+               "10000"
+               "01111";
+    case 'E':
+        return "11111"
+               "10000"
+               "10000"
+               "11110"
+               "10000"
+               "10000"
+               "11111";
     case 'L':
         return "10000"
                "10000"
@@ -63,6 +100,30 @@ const char* GlyphRows(char ch)
                "10000"
                "10000"
                "10000"
+               "11111";
+    case 'O':
+        return "01110"
+               "10001"
+               "10001"
+               "10001"
+               "10001"
+               "10001"
+               "01110";
+    case 'R':
+        return "11110"
+               "10001"
+               "10001"
+               "11110"
+               "10100"
+               "10010"
+               "10001";
+    case '_':
+        return "00000"
+               "00000"
+               "00000"
+               "00000"
+               "00000"
+               "00000"
                "11111";
     case 'a':
         return "00000"
@@ -133,8 +194,6 @@ const char* GlyphRows(char ch)
 
 void DrawGlyph(uint16_t* page, int x, int y, char ch, int scale, uint16_t color)
 {
-    constexpr int kGlyphWidth = 5;
-    constexpr int kGlyphHeight = 7;
     const char* rows = GlyphRows(ch);
     for (int gy = 0; gy < kGlyphHeight; ++gy) {
         for (int gx = 0; gx < kGlyphWidth; ++gx) {
@@ -159,16 +218,23 @@ void DrawGlyph(uint16_t* page, int x, int y, char ch, int scale, uint16_t color)
 
 void DrawText(uint16_t* page, const char* text, int x, int y, int scale, uint16_t color)
 {
-    constexpr int kGlyphWidth = 5;
-    constexpr int kSpacing = 1;
     int cursor = x;
     for (const char* p = text; *p != '\0'; ++p) {
         DrawGlyph(page, cursor, y, *p, scale, color);
-        cursor += (kGlyphWidth + kSpacing) * scale;
+        cursor += (kGlyphWidth + kGlyphSpacing) * scale;
     }
 }
 
-const uint16_t* GetLoadingPage()
+int TextWidth(const char* text, int scale)
+{
+    const int length = static_cast<int>(std::strlen(text));
+    if (length <= 0) {
+        return 0;
+    }
+    return (length * kGlyphWidth + (length - 1) * kGlyphSpacing) * scale;
+}
+
+uint16_t* AllocateBlackPage(const char* name)
 {
     uint16_t* page = static_cast<uint16_t*>(heap_caps_calloc(
         badge_defaults::kPixelCount,
@@ -181,7 +247,15 @@ const uint16_t* GetLoadingPage()
             MALLOC_CAP_8BIT));
     }
     if (page == nullptr) {
-        ESP_LOGE(TAG, "Failed to allocate loading page buffer");
+        ESP_LOGE(TAG, "Failed to allocate %s page buffer", name);
+    }
+    return page;
+}
+
+const uint16_t* GetLoadingPage()
+{
+    uint16_t* page = AllocateBlackPage("loading");
+    if (page == nullptr) {
         return nullptr;
     }
 
@@ -196,6 +270,51 @@ const uint16_t* GetLoadingPage()
     constexpr int x = (badge_defaults::kWidth - text_width) / 2;
     constexpr int y = (badge_defaults::kHeight - text_height) / 2;
     DrawText(page, kText, x, y, kScale, 0xFFFF);
+    return page;
+}
+
+const uint16_t* GetRecordingPage(int frame_index)
+{
+    constexpr const char* kFaceFrames[] = {
+        "( o _ o )",
+        "( O _ o )",
+        "( O _ O )",
+        "( o _ O )",
+    };
+    constexpr const char* kRecFrames[] = {
+        "   REC   ",
+        "  REC.   ",
+        "  REC..  ",
+        " REC...  ",
+    };
+    constexpr int kFrameCount = sizeof(kFaceFrames) / sizeof(kFaceFrames[0]);
+    static const uint16_t* pages[kFrameCount] = {};
+
+    frame_index %= kFrameCount;
+    if (frame_index < 0) {
+        frame_index += kFrameCount;
+    }
+
+    if (pages[frame_index] != nullptr) {
+        return pages[frame_index];
+    }
+
+    uint16_t* page = AllocateBlackPage("recording");
+    if (page == nullptr) {
+        return nullptr;
+    }
+
+    constexpr int kScale = 4;
+    constexpr int kLineGap = 2;
+    constexpr int block_height = (kGlyphHeight * 2 + kLineGap) * kScale;
+    const int y0 = (badge_defaults::kHeight - block_height) / 2;
+    const int y1 = y0 + (kGlyphHeight + kLineGap) * kScale;
+    const int face_x = (badge_defaults::kWidth - TextWidth(kFaceFrames[frame_index], kScale)) / 2;
+    const int rec_x = (badge_defaults::kWidth - TextWidth(kRecFrames[frame_index], kScale)) / 2;
+
+    DrawText(page, kFaceFrames[frame_index], face_x, y0, kScale, 0xFFFF);
+    DrawText(page, kRecFrames[frame_index], rec_x, y1, kScale, 0xFFFF);
+    pages[frame_index] = page;
     return page;
 }
 }
@@ -213,10 +332,9 @@ const uint16_t* LoadingPage()
     return page;
 }
 
-const uint16_t* RecordingPage()
+const uint16_t* RecordingPage(int frame_index)
 {
-    static const uint16_t* page = GetPage(0x0000, 0xF800, 0xFFFF);
-    return page;
+    return GetRecordingPage(frame_index);
 }
 
 const uint16_t* ErrorPage()

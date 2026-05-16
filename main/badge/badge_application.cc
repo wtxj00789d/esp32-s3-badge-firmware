@@ -14,6 +14,7 @@ namespace {
 constexpr const char* TAG = "BadgeApplication";
 constexpr int64_t kIdleQueueWaitUs = 50 * 1000;
 constexpr int64_t kStartupButtonIgnoreUs = 3 * 1000 * 1000;
+constexpr int64_t kRecordingAnimationIntervalUs = 400 * 1000;
 constexpr const char* kEmbeddedWallpaperSettingsValue = "__default__";
 
 const char* ButtonEventName(BadgeButtonEvent event)
@@ -119,6 +120,16 @@ void BadgeApplication::Run()
                     wait_us = kIdleQueueWaitUs;
                 }
             }
+        } else if (state_ == BadgeState::Recording) {
+            const int64_t now_us = esp_timer_get_time();
+            if (now_us >= recording_next_frame_time_us_) {
+                wait_us = 0;
+            } else {
+                wait_us = recording_next_frame_time_us_ - now_us;
+                if (wait_us > kIdleQueueWaitUs) {
+                    wait_us = kIdleQueueWaitUs;
+                }
+            }
         }
 
         BadgeAction action;
@@ -135,6 +146,11 @@ void BadgeApplication::Run()
             const int64_t now_us = esp_timer_get_time();
             if (now_us >= embedded_next_frame_time_us_) {
                 DrawEmbeddedWallpaperFrame();
+            }
+        } else if (state_ == BadgeState::Recording) {
+            const int64_t now_us = esp_timer_get_time();
+            if (now_us >= recording_next_frame_time_us_) {
+                DrawRecordingFrame();
             }
         }
     }
@@ -402,6 +418,18 @@ void BadgeApplication::DrawEmbeddedWallpaperFrame()
     embedded_next_frame_time_us_ = scheduled_frame_time_us + frame_period_us;
 }
 
+void BadgeApplication::DrawRecordingFrame()
+{
+    board_.DrawRgb565(
+        0,
+        0,
+        board_.Width(),
+        board_.Height(),
+        badge_defaults::RecordingPage(recording_animation_frame_));
+    recording_animation_frame_ = (recording_animation_frame_ + 1) % 4;
+    recording_next_frame_time_us_ = esp_timer_get_time() + kRecordingAnimationIntervalUs;
+}
+
 void BadgeApplication::StartRecording()
 {
     if (!storage_.mounted()) {
@@ -429,7 +457,9 @@ void BadgeApplication::StartRecording()
     }
 
     state_ = BadgeState::Recording;
-    board_.DrawRgb565(0, 0, board_.Width(), board_.Height(), badge_defaults::RecordingPage());
+    recording_animation_frame_ = 0;
+    recording_next_frame_time_us_ = esp_timer_get_time();
+    DrawRecordingFrame();
 }
 
 void BadgeApplication::StopRecording()

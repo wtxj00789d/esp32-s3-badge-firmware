@@ -10,6 +10,6 @@ constexpr int kPixelCount = kWidth * kHeight;
 
 const uint16_t* DefaultPage();
 const uint16_t* LoadingPage();
-const uint16_t* RecordingPage();
+const uint16_t* RecordingPage(int frame_index);
 const uint16_t* ErrorPage();
 }
