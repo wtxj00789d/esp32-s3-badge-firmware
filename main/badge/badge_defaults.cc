@@ -278,8 +278,8 @@ const uint16_t* GetRecordingPage(int frame_index)
     constexpr const char* kFaceFrames[] = {
         "( o _ o )",
         "( O _ o )",
-        "( O _ O )",
         "( o _ O )",
+        "( O _ O )",
     };
     constexpr const char* kRecFrames[] = {
         "   REC   ",
