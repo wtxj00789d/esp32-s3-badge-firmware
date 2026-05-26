@@ -1,173 +1,197 @@
-# An MCP-based Chatbot
+# ESP32-S3 Badge Firmware
 
-(English | [中文](README_zh.md) | [日本語](README_ja.md))
+这是一个面向 Spotpear ESP32-S3 1.28 英寸圆屏盒子的电子徽章固件。它已经从最初的小智语音聊天固件演化成独立 badge firmware：启动显示壁纸，BOOT 键播放声音、切换壁纸、录音，素材和录音走 SD 卡。
 
-## Introduction
+当前目标硬件：
 
-👉 [Human: Give AI a camera vs AI: Instantly finds out the owner hasn't washed hair for three days【bilibili】](https://www.bilibili.com/video/BV1bpjgzKEhd/)
+- 主控：ESP32-S3，16 MB flash，8 MB PSRAM
+- 屏幕：1.28 英寸 240x240 GC9A01 圆屏，RGB565，SPI
+- 音频：ES8311 codec，单声道录放
+- 存储：microSD，SDMMC 1-bit
+- 输入：BOOT 键，GPIO0
 
-👉 [Handcraft your AI girlfriend, beginner's guide【bilibili】](https://www.bilibili.com/video/BV1XnmFYLEJN/)
+## 给用户
 
-As a voice interaction entry, the XiaoZhi AI chatbot leverages the AI capabilities of large models like Qwen / DeepSeek, and achieves multi-terminal control via the MCP protocol.
+### 下载固件
 
-<img src="docs/mcp-based-graph.jpg" alt="Control everything via MCP" width="320">
+到 GitHub Releases 下载最新的 `esp32-s3-badge-firmware-merged.bin`。这是推荐给普通用户使用的合并固件，直接从 `0x0` 写入即可。
 
-## Version Notes
+仓库地址：
 
-The current v2 version is incompatible with the v1 partition table, so it is not possible to upgrade from v1 to v2 via OTA. For partition table details, see [partitions/v2/README.md](partitions/v2/README.md).
+```text
+https://github.com/wtxj00789d/esp32-s3-badge-firmware
+```
 
-All hardware running v1 can be upgraded to v2 by manually flashing the firmware.
+### 刷机
 
-The stable version of v1 is 1.9.2. You can switch to v1 by running `git checkout v1`. The v1 branch will be maintained until February 2026.
+安装 Python 和 Espressif 的 `esptool.py` 后，将设备通过 USB 连接到电脑。Windows 下串口通常类似 `COM6`，macOS/Linux 下通常类似 `/dev/ttyACM0` 或 `/dev/ttyUSB0`。
 
-### Features Implemented
+擦除 flash：
 
-- Wi-Fi / ML307 Cat.1 4G
-- Offline voice wake-up [ESP-SR](https://github.com/espressif/esp-sr)
-- Supports two communication protocols ([Websocket](docs/websocket.md) or MQTT+UDP)
-- Uses OPUS audio codec
-- Voice interaction based on streaming ASR + LLM + TTS architecture
-- Speaker recognition, identifies the current speaker [3D Speaker](https://github.com/modelscope/3D-Speaker)
-- OLED / LCD display, supports emoji display
-- Battery display and power management
-- Multi-language support (Chinese, English, Japanese)
-- Supports ESP32-C3, ESP32-S3, ESP32-P4 chip platforms
-- Device-side MCP for device control (Speaker, LED, Servo, GPIO, etc.)
-- Cloud-side MCP to extend large model capabilities (smart home control, PC desktop operation, knowledge search, email, etc.)
-- Customizable wake words, fonts, emojis, and chat backgrounds with online web-based editing ([Custom Assets Generator](https://github.com/78/xiaozhi-assets-generator))
+```bash
+python -m esptool --chip esp32s3 --port COM6 erase_flash
+```
 
-## Hardware
+写入合并固件：
 
-### Breadboard DIY Practice
+```bash
+python -m esptool --chip esp32s3 --port COM6 --baud 921600 write_flash 0x0 esp32-s3-badge-firmware-merged.bin
+```
 
-See the Feishu document tutorial:
+如果写入失败，先降低波特率：
 
-👉 ["XiaoZhi AI Chatbot Encyclopedia"](https://ccnphfhqs21z.feishu.cn/wiki/F5krwD16viZoF0kKkvDcrZNYnhb?from=from_copylink)
+```bash
+python -m esptool --chip esp32s3 --port COM6 --baud 460800 write_flash 0x0 esp32-s3-badge-firmware-merged.bin
+```
 
-Breadboard demo:
+### SD 卡目录
 
-![Breadboard Demo](docs/v1/wiring2.jpg)
+第一次启动时，固件会尝试在 SD 卡上使用这些目录：
 
-### Supports 70+ Open Source Hardware (Partial List)
+```text
+/BADGE
+/REC
+```
 
-- <a href="https://oshwhub.com/li-chuang-kai-fa-ban/li-chuang-shi-zhan-pai-esp32-s3-kai-fa-ban" target="_blank" title="LiChuang ESP32-S3 Development Board">LiChuang ESP32-S3 Development Board</a>
-- <a href="https://github.com/espressif/esp-box" target="_blank" title="Espressif ESP32-S3-BOX3">Espressif ESP32-S3-BOX3</a>
-- <a href="https://docs.m5stack.com/zh_CN/core/CoreS3" target="_blank" title="M5Stack CoreS3">M5Stack CoreS3</a>
-- <a href="https://docs.m5stack.com/en/atom/Atomic%20Echo%20Base" target="_blank" title="AtomS3R + Echo Base">M5Stack AtomS3R + Echo Base</a>
-- <a href="https://gf.bilibili.com/item/detail/1108782064" target="_blank" title="Magic Button 2.4">Magic Button 2.4</a>
-- <a href="https://www.waveshare.net/shop/ESP32-S3-Touch-AMOLED-1.8.htm" target="_blank" title="Waveshare ESP32-S3-Touch-AMOLED-1.8">Waveshare ESP32-S3-Touch-AMOLED-1.8</a>
-- <a href="https://github.com/Xinyuan-LilyGO/T-Circle-S3" target="_blank" title="LILYGO T-Circle-S3">LILYGO T-Circle-S3</a>
-- <a href="https://oshwhub.com/tenclass01/xmini_c3" target="_blank" title="XiaGe Mini C3">XiaGe Mini C3</a>
-- <a href="https://oshwhub.com/movecall/cuican-ai-pendant-lights-up-y" target="_blank" title="Movecall CuiCan ESP32S3">CuiCan AI Pendant</a>
-- <a href="https://github.com/WMnologo/xingzhi-ai" target="_blank" title="WMnologo-Xingzhi-1.54">WMnologo-Xingzhi-1.54TFT</a>
-- <a href="https://www.seeedstudio.com/SenseCAP-Watcher-W1-A-p-5979.html" target="_blank" title="SenseCAP Watcher">SenseCAP Watcher</a>
-- <a href="https://www.bilibili.com/video/BV1BHJtz6E2S/" target="_blank" title="ESP-HI Low Cost Robot Dog">ESP-HI Low Cost Robot Dog</a>
+壁纸和声音放在 `/BADGE`。录音会写到 `/REC`。
 
-<div style="display: flex; justify-content: space-between;">
-  <a href="docs/v1/lichuang-s3.jpg" target="_blank" title="LiChuang ESP32-S3 Development Board">
-    <img src="docs/v1/lichuang-s3.jpg" width="240" />
-  </a>
-  <a href="docs/v1/espbox3.jpg" target="_blank" title="Espressif ESP32-S3-BOX3">
-    <img src="docs/v1/espbox3.jpg" width="240" />
-  </a>
-  <a href="docs/v1/m5cores3.jpg" target="_blank" title="M5Stack CoreS3">
-    <img src="docs/v1/m5cores3.jpg" width="240" />
-  </a>
-  <a href="docs/v1/atoms3r.jpg" target="_blank" title="AtomS3R + Echo Base">
-    <img src="docs/v1/atoms3r.jpg" width="240" />
-  </a>
-  <a href="docs/v1/magiclick.jpg" target="_blank" title="Magic Button 2.4">
-    <img src="docs/v1/magiclick.jpg" width="240" />
-  </a>
-  <a href="docs/v1/waveshare.jpg" target="_blank" title="Waveshare ESP32-S3-Touch-AMOLED-1.8">
-    <img src="docs/v1/waveshare.jpg" width="240" />
-  </a>
-  <a href="docs/v1/lilygo-t-circle-s3.jpg" target="_blank" title="LILYGO T-Circle-S3">
-    <img src="docs/v1/lilygo-t-circle-s3.jpg" width="240" />
-  </a>
-  <a href="docs/v1/xmini-c3.jpg" target="_blank" title="XiaGe Mini C3">
-    <img src="docs/v1/xmini-c3.jpg" width="240" />
-  </a>
-  <a href="docs/v1/movecall-cuican-esp32s3.jpg" target="_blank" title="CuiCan">
-    <img src="docs/v1/movecall-cuican-esp32s3.jpg" width="240" />
-  </a>
-  <a href="docs/v1/wmnologo_xingzhi_1.54.jpg" target="_blank" title="WMnologo-Xingzhi-1.54">
-    <img src="docs/v1/wmnologo_xingzhi_1.54.jpg" width="240" />
-  </a>
-  <a href="docs/v1/sensecap_watcher.jpg" target="_blank" title="SenseCAP Watcher">
-    <img src="docs/v1/sensecap_watcher.jpg" width="240" />
-  </a>
-  <a href="docs/v1/esp-hi.jpg" target="_blank" title="ESP-HI Low Cost Robot Dog">
-    <img src="docs/v1/esp-hi.jpg" width="240" />
-  </a>
-</div>
+推荐文件命名：
 
-## Software
+```text
+/BADGE/001.BWP
+/BADGE/001.WAV
+/BADGE/002.BWP
+/BADGE/002.WAV
+/REC/REC0001.WAV
+```
 
-### Firmware Flashing
+`BWP` 是这个固件使用的壁纸格式。当前设计目标是 240x240、RGB565、最高 15 FPS。静态图片也可以作为 1 帧 BWP 使用。
 
-For beginners, it is recommended to use the firmware that can be flashed without setting up a development environment.
+同名 WAV 会作为当前壁纸的声音：
 
-The firmware connects to the official [xiaozhi.me](https://xiaozhi.me) server by default. Personal users can register an account to use the Qwen real-time model for free.
+```text
+001.BWP -> 001.WAV
+```
 
-👉 [Beginner's Firmware Flashing Guide](https://ccnphfhqs21z.feishu.cn/wiki/Zpz4wXBtdimBrLk25WdcXzxcnNS)
+WAV 建议使用：
 
-### Development Environment
+```text
+PCM
+24000 Hz
+16-bit
+mono
+```
 
-- Cursor or VSCode
-- Install ESP-IDF plugin, select SDK version 5.4 or above
-- Linux is better than Windows for faster compilation and fewer driver issues
-- This project uses Google C++ code style, please ensure compliance when submitting code
+### 按键操作
 
-### Developer Documentation
+正常显示时：
 
-- [Custom Board Guide](docs/custom-board.md) - Learn how to create custom boards for XiaoZhi AI
-- [MCP Protocol IoT Control Usage](docs/mcp-usage.md) - Learn how to control IoT devices via MCP protocol
-- [MCP Protocol Interaction Flow](docs/mcp-protocol.md) - Device-side MCP protocol implementation
-- [MQTT + UDP Hybrid Communication Protocol Document](docs/mqtt-udp.md)
-- [A detailed WebSocket communication protocol document](docs/websocket.md)
+```text
+单击 BOOT    播放当前壁纸对应的 WAV
+双击 BOOT    切换到下一张壁纸
+长按 BOOT    开始录音
+```
 
-## Large Model Configuration
+录音时：
 
-If you already have a XiaoZhi AI chatbot device and have connected to the official server, you can log in to the [xiaozhi.me](https://xiaozhi.me) console for configuration.
+```text
+单击 BOOT    停止录音并返回壁纸
+双击 BOOT    忽略
+长按 BOOT    忽略
+```
 
-👉 [Backend Operation Video Tutorial (Old Interface)](https://www.bilibili.com/video/BV1jUCUY2EKM/)
+没有 SD 卡或 SD 卡没有有效素材时，固件会显示内置默认页面。没有同名 WAV 时，单击不会导致崩溃，只是没有声音可播。
 
-## Related Open Source Projects
+## 给开发者
 
-For server deployment on personal computers, refer to the following open-source projects:
+### 项目定位
 
-- [xinnan-tech/xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server) Python server
-- [joey-zhou/xiaozhi-esp32-server-java](https://github.com/joey-zhou/xiaozhi-esp32-server-java) Java server
-- [AnimeAIChat/xiaozhi-server-go](https://github.com/AnimeAIChat/xiaozhi-server-go) Golang server
-- [hackers365/xiaozhi-esp32-server-golang](https://github.com/hackers365/xiaozhi-esp32-server-golang) Golang server
+这个仓库现在是专用 ESP32-S3 badge firmware，不再是完整的小智聊天应用。保留的重点是板级硬件初始化、LCD 直绘、ES8311 音频、SD 卡文件系统、NVS 设置和 badge 应用状态机。
 
-Other client projects using the XiaoZhi communication protocol:
+当前 badge 应用入口：
 
-- [huangjunsen0406/py-xiaozhi](https://github.com/huangjunsen0406/py-xiaozhi) Python client
-- [TOM88812/xiaozhi-android-client](https://github.com/TOM88812/xiaozhi-android-client) Android client
-- [100askTeam/xiaozhi-linux](http://github.com/100askTeam/xiaozhi-linux) Linux client by 100ask
-- [78/xiaozhi-sf32](https://github.com/78/xiaozhi-sf32) Bluetooth chip firmware by Sichuan
-- [QuecPython/solution-xiaozhiAI](https://github.com/QuecPython/solution-xiaozhiAI) QuecPython firmware by Quectel
+```text
+main/main.cc
+main/badge/
+```
 
-Custom Assets Tools:
+核心模块：
 
-- [78/xiaozhi-assets-generator](https://github.com/78/xiaozhi-assets-generator) Custom Assets Generator (Wake words, fonts, emojis, backgrounds)
+```text
+main/badge/badge_application.*   产品状态机
+main/badge/badge_board.*         LCD、音频、按键、SD 相关板级封装
+main/badge/badge_defaults.*      无 SD / 录音 / 错误等内置页面
+main/badge/badge_storage.*       SD 挂载和素材扫描
+main/badge/badge_settings.*      NVS 设置
+main/badge/badge_bwp.*           BWP 壁纸加载和播放
+main/badge/badge_sound.*         WAV 播放
+main/badge/badge_recorder.*      WAV 录音
+```
 
-## About the Project
+仍然复用的底层代码包括音频 codec、公共 button/backlight/I2C helper 等。旧的小智云端协议、聊天状态机、OTA、唤醒词、LVGL UI 等不属于这个 badge 固件的运行路径。
 
-This is an open-source ESP32 project, released under the MIT license, allowing anyone to use it for free, including for commercial purposes.
+### 构建环境
 
-We hope this project helps everyone understand AI hardware development and apply rapidly evolving large language models to real hardware devices.
+目标 ESP-IDF：
 
-If you have any ideas or suggestions, please feel free to raise Issues or join our [Discord](https://discord.gg/bXqgAfRm) or QQ group: 994694848
+```text
+ESP-IDF 5.5.x
+target: esp32s3
+```
 
-## Star History
+在 ESP-IDF PowerShell 或已激活 ESP-IDF 环境中：
 
-<a href="https://star-history.com/#78/xiaozhi-esp32&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=78/xiaozhi-esp32&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=78/xiaozhi-esp32&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=78/xiaozhi-esp32&type=Date" />
- </picture>
-</a> 
+```bash
+idf.py set-target esp32s3
+idf.py build
+```
+
+当前配置选择的板型：
+
+```text
+CONFIG_BOARD_TYPE_SPOTPEAR_ESP32_S3_1_28_BOX=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions/v2/16m.csv"
+```
+
+### 本地刷写开发版
+
+开发时可以直接使用 ESP-IDF：
+
+```bash
+idf.py -p COM6 flash monitor
+```
+
+如果只想生成合并固件，可以在 build 后使用 ESP-IDF 生成的 merged binary，或按 release 中的合并固件发布方式导出。
+
+### 固件产物说明
+
+Release 中优先使用：
+
+```text
+esp32-s3-badge-firmware-merged.bin
+```
+
+这是完整 flash 镜像，适合普通用户从 `0x0` 写入。
+
+工程调试时可能还会看到拆分镜像：
+
+```text
+flash_partition_table.bin
+flash_otadata.bin
+flash_ota0_header.bin
+flash_ota1_header.bin
+flash_app_0x20000.bin
+```
+
+这些用于理解分区和 OTA app 布局。普通用户不需要手动组合它们，除非正在调试启动、分区或 OTA 行为。
+
+### 设计笔记
+
+更多背景见：
+
+```text
+docs/superpowers/specs/2026-05-09-badge-firmware-design.md
+docs/badge-firmware-notes.md
+```
+
+特别注意 GC9A01 的 RGB565 字节序问题：BWP 文件保持正常 RGB565，LCD 传输前做字节序适配，不要把错误字节序写进素材格式。
